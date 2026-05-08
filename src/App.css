@@ -1,0 +1,18 @@
+
+ * {
+   box-sizing: border-box;
+   margin: 0;
+   padding: 0;
+   border: 0;
+   font-family: inherit;
+   font-size: inherit;
+   font-weight: inherit;
+   line-height: inherit;
+   color: inherit;
+   text-align: inherit;
+   text-decoration: none;
+   list-style: none;
+   background: none;
+   cursor: inherit;
+   -webkit-tap-highlight-color: transparent;
+ }
