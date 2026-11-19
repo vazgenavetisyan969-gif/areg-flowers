@@ -52,6 +52,23 @@ import {
 const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
 const logo = "/areg-flowers-logo.png";
 
+const COUNTRIES = [
+  { code: "AM", name: "Հայաստան", flag: "🇦🇲", dial: "+374", placeholder: "77123456" },
+  { code: "RU", name: "Ռուսաստան", flag: "🇷🇺", dial: "+7", placeholder: "9161234567" },
+  { code: "US", name: "ԱՄՆ", flag: "🇺🇸", dial: "+1", placeholder: "2025550123" },
+  { code: "GE", name: "Վրաստան", flag: "🇬🇪", dial: "+995", placeholder: "555123456" },
+  { code: "FR", name: "Ֆրանսիա", flag: "🇫🇷", dial: "+33", placeholder: "612345678" },
+  { code: "DE", name: "Գերմանիա", flag: "🇩🇪", dial: "+49", placeholder: "15123456789" },
+  { code: "AE", name: "ԱՄԷ", flag: "🇦🇪", dial: "+971", placeholder: "501234567" },
+  { code: "IR", name: "Իրան", flag: "🇮🇷", dial: "+98", placeholder: "9123456789" },
+];
+
+const ABOUT_GALLERY_SLOTS = Array.from({ length: 10 }, (_, index) => ({
+  id: index + 1,
+  label: `Նկար ${index + 1} (Ավելացրեք ձեր նկարը այստեղ)`,
+  src: "", // Հետո այստեղ կդնեք նկարի հղումը, օրինակ՝ "/images/photo1.jpg"
+}));
+
 const products = [
   {
     id: "astromeria",
@@ -153,17 +170,157 @@ function getPriceNumber(price) {
   return Number(String(price).replace(/,/g, "").replace(" դրամ", ""));
 }
 
-function normalizePhone(rawPhone) {
-  const cleaned = rawPhone.replace(/[^\d+]/g, "");
-  if (!cleaned) return "";
-  if (cleaned.startsWith("+")) return cleaned;
-  if (cleaned.startsWith("0") && cleaned.length === 9) {
-    return `+374${cleaned.slice(1)}`;
+function splitPhoneWithCountry(rawPhone) {
+  const cleaned = String(rawPhone || "").replace(/[^\d+]/g, "");
+  if (!cleaned) {
+    return { country: COUNTRIES[0], digits: "" };
   }
-  if (cleaned.length === 8) {
-    return `+374${cleaned}`;
+
+  const sortedByDialLength = [...COUNTRIES].sort(
+    (a, b) => b.dial.length - a.dial.length
+  );
+
+  for (const country of sortedByDialLength) {
+    if (cleaned.startsWith(country.dial)) {
+      return {
+        country,
+        digits: cleaned.slice(country.dial.length).replace(/\D/g, ""),
+      };
+    }
   }
-  return `+${cleaned}`;
+
+  const onlyDigits = cleaned.replace(/\D/g, "");
+  if (onlyDigits.startsWith("0") && onlyDigits.length === 9) {
+    return { country: COUNTRIES[0], digits: onlyDigits.slice(1) };
+  }
+
+  return { country: COUNTRIES[0], digits: onlyDigits };
+}
+
+function PhoneInputWithFlag({
+  countryCode,
+  onCountryChange,
+  digits,
+  onDigitsChange,
+  required = false,
+}) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const selectedCountry =
+    COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+
+  const handleDigitsInput = (e) => {
+    // Թույլատրում ենք ՄԻԱՅՆ թվեր (0-9)
+    const numericOnly = e.target.value.replace(/\D/g, "");
+    onDigitsChange(numericOnly);
+  };
+
+  return (
+    <div style={{ position: "relative", width: "100%" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          border: "1px solid #e2e8f0",
+          borderRadius: "10px",
+          background: "#fff",
+          overflow: "hidden",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setDropdownOpen((prev) => !prev)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            padding: "11px 12px",
+            border: "none",
+            borderRight: "1px solid #e2e8f0",
+            background: "#fff5f7",
+            cursor: "pointer",
+            fontSize: "14px",
+            fontWeight: 600,
+            color: "#2d3748",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={{ fontSize: "18px" }}>{selectedCountry.flag}</span>
+          <span>{selectedCountry.dial}</span>
+          <span style={{ fontSize: "10px", color: "#718096" }}>▼</span>
+        </button>
+
+        <input
+          type="tel"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          placeholder={selectedCountry.placeholder}
+          value={digits}
+          onChange={handleDigitsInput}
+          required={required}
+          style={{
+            flex: 1,
+            border: "none",
+            outline: "none",
+            padding: "11px 12px",
+            fontSize: "14px",
+            color: "#1a202c",
+            width: "100%",
+          }}
+        />
+      </div>
+
+      {dropdownOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "105%",
+            left: 0,
+            right: 0,
+            maxHeight: "200px",
+            overflowY: "auto",
+            background: "#fff",
+            border: "1px solid #e2e8f0",
+            borderRadius: "10px",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.12)",
+            zIndex: 50,
+          }}
+        >
+          {COUNTRIES.map((country) => (
+            <button
+              key={country.code}
+              type="button"
+              onClick={() => {
+                onCountryChange(country.code);
+                setDropdownOpen(false);
+              }}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "9px 12px",
+                border: "none",
+                borderBottom: "1px solid #f7fafc",
+                background:
+                  country.code === selectedCountry.code ? "#fff5f7" : "#fff",
+                cursor: "pointer",
+                fontSize: "14px",
+                textAlign: "left",
+              }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span style={{ fontSize: "18px" }}>{country.flag}</span>
+                <span>{country.name}</span>
+              </span>
+              <span style={{ fontWeight: 600, color: "#d53f8c" }}>
+                {country.dial}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getCartStorageKey(userId) {
@@ -190,6 +347,7 @@ function writeCartToStorage(userId, items) {
 }
 
 function FlowerShop() {
+  const [activePage, setActivePage] = useState("home"); // "home" կամ "about"
   const [activeCategory, setActiveCategory] = useState(null);
   const [orderOpen, setOrderOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -213,13 +371,15 @@ function FlowerShop() {
     fullName: "",
     email: "",
     password: "",
-    phone: "",
+    countryCode: "AM",
+    phoneDigits: "",
     otp: "",
   });
 
   const [form, setForm] = useState({
     name: "",
-    phone: "",
+    countryCode: "AM",
+    phoneDigits: "",
     address: "",
     payment: "cash",
   });
@@ -228,6 +388,14 @@ function FlowerShop() {
     setSuccessText(msg);
     setSuccess(true);
     setTimeout(() => setSuccess(false), duration);
+  };
+
+  const getFullPhone = (countryCode, digits) => {
+    const cleanDigits = String(digits || "").replace(/\D/g, "");
+    if (!cleanDigits) return "";
+    const country =
+      COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+    return `${country.dial}${cleanDigits}`;
   };
 
   const syncUserSession = (currentUser) => {
@@ -249,14 +417,17 @@ function FlowerShop() {
         currentUser.user_metadata?.full_name ||
         currentUser.user_metadata?.name ||
         "";
+      const rawPhone =
+        currentUser.phone || currentUser.user_metadata?.phone || "";
+      const parsedPhone = splitPhoneWithCountry(rawPhone);
+
       setForm((prev) => ({
         ...prev,
         name: prev.name || metaName,
-        phone:
-          prev.phone ||
-          currentUser.phone ||
-          currentUser.user_metadata?.phone ||
-          "",
+        countryCode: prev.phoneDigits
+          ? prev.countryCode
+          : parsedPhone.country.code,
+        phoneDigits: prev.phoneDigits || parsedPhone.digits,
       }));
     } else {
       setProfileOpen(false);
@@ -271,10 +442,12 @@ function FlowerShop() {
       syncUserSession(data?.session?.user || null);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      syncUserSession(session?.user || null);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (!mounted) return;
+        syncUserSession(session?.user || null);
+      }
+    );
 
     return () => {
       mounted = false;
@@ -317,6 +490,10 @@ function FlowerShop() {
     try {
       const emailClean = authForm.email.trim();
       const nameClean = authForm.fullName.trim();
+      const fullPhone = getFullPhone(
+        authForm.countryCode,
+        authForm.phoneDigits
+      );
 
       if (!emailClean || !authForm.password) {
         setAuthError("Լրացրեք Gmail/Email-ը և գաղտնաբառը։");
@@ -330,7 +507,7 @@ function FlowerShop() {
           options: {
             data: {
               full_name: nameClean,
-              phone: authForm.phone.trim(),
+              phone: fullPhone,
             },
           },
         });
@@ -344,7 +521,10 @@ function FlowerShop() {
           setForm((prev) => ({
             ...prev,
             name: nameClean || prev.name,
-            phone: authForm.phone.trim() || prev.phone,
+            countryCode: authForm.phoneDigits
+              ? authForm.countryCode
+              : prev.countryCode,
+            phoneDigits: authForm.phoneDigits || prev.phoneDigits,
           }));
         }
 
@@ -367,6 +547,10 @@ function FlowerShop() {
           });
         }
 
+        const userPhone = splitPhoneWithCountry(
+          data?.user?.user_metadata?.phone || data?.user?.phone || ""
+        );
+
         setForm((prev) => ({
           ...prev,
           name:
@@ -374,11 +558,10 @@ function FlowerShop() {
             prev.name ||
             data?.user?.user_metadata?.full_name ||
             "",
-          phone:
-            prev.phone ||
-            data?.user?.user_metadata?.phone ||
-            data?.user?.phone ||
-            "",
+          countryCode: prev.phoneDigits
+            ? prev.countryCode
+            : userPhone.country.code,
+          phoneDigits: prev.phoneDigits || userPhone.digits,
         }));
 
         setAuthOpen(false);
@@ -397,9 +580,12 @@ function FlowerShop() {
     setAuthLoading(true);
 
     try {
-      const formattedPhone = normalizePhone(authForm.phone);
-      if (!formattedPhone || formattedPhone.length < 8) {
-        setAuthError("Մուտքագրեք ճիշտ հեռախոսահամար (օրինակ՝ +37477123456)։");
+      const formattedPhone = getFullPhone(
+        authForm.countryCode,
+        authForm.phoneDigits
+      );
+      if (!authForm.phoneDigits || authForm.phoneDigits.length < 6) {
+        setAuthError("Մուտքագրեք ճիշտ հեռախոսահամար (միայն թվեր)։");
         return;
       }
 
@@ -417,7 +603,6 @@ function FlowerShop() {
         return;
       }
 
-      setAuthForm((prev) => ({ ...prev, phone: formattedPhone }));
       setOtpSent(true);
       showToast("SMS կոդն ուղարկվեց 📩");
     } catch {
@@ -433,7 +618,10 @@ function FlowerShop() {
     setAuthLoading(true);
 
     try {
-      const formattedPhone = normalizePhone(authForm.phone);
+      const formattedPhone = getFullPhone(
+        authForm.countryCode,
+        authForm.phoneDigits
+      );
       const tokenClean = authForm.otp.trim();
 
       if (!tokenClean) {
@@ -441,7 +629,7 @@ function FlowerShop() {
         return;
       }
 
-      const { data, error } = await supabase.auth.verifyOtp({
+      const { error } = await supabase.auth.verifyOtp({
         phone: formattedPhone,
         token: tokenClean,
         type: "sms",
@@ -461,7 +649,8 @@ function FlowerShop() {
       setForm((prev) => ({
         ...prev,
         name: authForm.fullName.trim() || prev.name,
-        phone: data?.user?.phone || formattedPhone || prev.phone,
+        countryCode: authForm.countryCode,
+        phoneDigits: authForm.phoneDigits,
       }));
 
       setAuthOpen(false);
@@ -522,13 +711,15 @@ function FlowerShop() {
     });
   };
 
-  const cartProductsCount = cart.reduce((count, item) => {
-    return count + item.quantity;
-  }, 0);
+  const cartProductsCount = cart.reduce(
+    (count, item) => count + item.quantity,
+    0
+  );
 
-  const totalPrice = cart.reduce((total, item) => {
-    return total + getPriceNumber(item.price) * item.quantity;
-  }, 0);
+  const totalPrice = cart.reduce(
+    (total, item) => total + getPriceNumber(item.price) * item.quantity,
+    0
+  );
 
   const handleOrderSubmit = async (e) => {
     e.preventDefault();
@@ -538,7 +729,9 @@ function FlowerShop() {
       return;
     }
 
-    if (!form.name || !form.phone || !form.address || !form.payment) {
+    const fullOrderPhone = getFullPhone(form.countryCode, form.phoneDigits);
+
+    if (!form.name || !form.phoneDigits || !form.address || !form.payment) {
       alert("Լրացրեք բոլոր դաշտերը։");
       return;
     }
@@ -548,7 +741,6 @@ function FlowerShop() {
     const productsText = cart
       .map((item, index) => {
         const itemTotal = getPriceNumber(item.price) * item.quantity;
-
         return `
 ${index + 1}. ${item.title}
 Գին: ${item.price}
@@ -568,7 +760,7 @@ ${index + 1}. ${item.title}
 
 Հաճախորդի տվյալներ
 Անուն: ${form.name}
-Հեռախոս: ${form.phone}
+Հեռախոս: ${fullOrderPhone}
 Հասցե: ${form.address}
 ${userAccountInfo}
 
@@ -586,7 +778,7 @@ ${productsText}
       subject: "🌸 Նոր պատվեր Areg flowers կայքից",
       from_name: "Areg flowers",
       name: form.name,
-      phone: form.phone,
+      phone: fullOrderPhone,
       address: form.address,
       account: userAccountInfo,
       payment:
@@ -622,12 +814,17 @@ ${productsText}
       setCartOpen(false);
       setCart([]);
       writeCartToStorage(user?.id, []);
+
+      const parsedUserPhone = splitPhoneWithCountry(
+        user?.phone || user?.user_metadata?.phone || ""
+      );
       setForm({
         name:
           user?.user_metadata?.full_name ||
           user?.user_metadata?.name ||
           "",
-        phone: user?.phone || user?.user_metadata?.phone || "",
+        countryCode: parsedUserPhone.country.code,
+        phoneDigits: parsedUserPhone.digits,
         address: "",
         payment: "cash",
       });
@@ -655,19 +852,72 @@ ${productsText}
     .charAt(0)
     .toUpperCase();
 
+  const navigateToSection = (page, hashId) => {
+    setActivePage(page);
+    if (hashId) {
+      setTimeout(() => {
+        const el = document.getElementById(hashId);
+        if (el) el.scrollIntoView({ behavior: "smooth" });
+      }, 60);
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
   return (
     <Page>
       <Header>
-        <Logo>
+        <Logo
+          onClick={() => navigateToSection("home", null)}
+          style={{ cursor: "pointer" }}
+        >
           <img src={logo} alt="Areg flowers" />
           <span>Areg flowers</span>
         </Logo>
 
         <Nav>
-          <a href="#home">Գլխավոր</a>
-          <a href="#products">Ծաղիկներ</a>
-          <a href="#about">Մեր մասին</a>
-          <a href="#contact">Կապ</a>
+          <a
+            href="#home"
+            onClick={(e) => {
+              e.preventDefault();
+              navigateToSection("home", "home");
+            }}
+          >
+            Գլխավոր
+          </a>
+          <a
+            href="#products"
+            onClick={(e) => {
+              e.preventDefault();
+              navigateToSection("home", "products");
+            }}
+          >
+            Ծաղիկներ
+          </a>
+          <a
+            href="#about-page"
+            onClick={(e) => {
+              e.preventDefault();
+              navigateToSection("about", null);
+            }}
+            style={
+              activePage === "about"
+                ? { color: "#d53f8c", fontWeight: 700 }
+                : undefined
+            }
+          >
+            Մեր մասին
+          </a>
+          <a
+            href="#contact"
+            onClick={(e) => {
+              e.preventDefault();
+              const el = document.getElementById("contact");
+              if (el) el.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            Կապ
+          </a>
 
           {user ? (
             <button
@@ -742,68 +992,264 @@ ${productsText}
         </Nav>
       </Header>
 
-      <Hero id="home">
-        <HeroText>
-          <Title>Ծաղիկներ, որոնք խոսում են ձեր փոխարեն</Title>
-          <Subtitle>
-            Areg flowers-ում կգտնես գեղեցիկ ծաղկեփնջեր, վարդեր, աստրոմերիա և
-            նուրբ ծաղկային ձևավորումներ ցանկացած առիթի համար։
-          </Subtitle>
-
-          <Button onClick={() => setCartOpen(true)}>Բացել զամբյուղը</Button>
-        </HeroText>
-
-        <HeroCard>
-          <FlowerImg src={logo} alt="Areg flowers" />
-        </HeroCard>
-      </Hero>
-
-      <Section id="products">
-        <SectionTitle>Մեր ծաղիկները</SectionTitle>
-
-        <Cards>
-          {products.map((item) => (
-            <Card key={item.id}>
-              <PlusButton onClick={() => addToCart(item)}>+</PlusButton>
-
-              <CardImg src={item.img} alt={item.title} />
-              <CardTitle>{item.title}</CardTitle>
-              <CardText>{item.text}</CardText>
-              <Price>{item.price}</Price>
-
-              <Button onClick={() => addToCart(item)} $small>
-                Ավելացնել զամբյուղ
-              </Button>
-            </Card>
-          ))}
-        </Cards>
-
-        <MoreControls>
-          <h3>Տեսնել բաժինները</h3>
-          <p>Ընտրիր ծաղկի տեսակը և բացիր ապրանքները</p>
-
-          <div>
-            {Object.entries(categoryItems).map(([key, category]) => (
-              <MoreButton
-                key={key}
+      {activePage === "about" ? (
+        <Section id="about-page" style={{ paddingTop: "36px" }}>
+          <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
+            <div style={{ marginBottom: "20px" }}>
+              <Button
                 type="button"
-                $active={activeCategory === key}
-                onClick={() =>
-                  setActiveCategory(activeCategory === key ? null : key)
-                }
+                $small
+                onClick={() => navigateToSection("home", null)}
               >
-                {category.button}
-              </MoreButton>
-            ))}
-          </div>
-        </MoreControls>
+                ← Վերադառնալ գլխավոր էջ
+              </Button>
+            </div>
 
-        {activeCategory && (
-          <MoreBox>
-            <SectionTitle>{categoryItems[activeCategory].title}</SectionTitle>
+            <SectionTitle>Մեր մասին — Areg flowers</SectionTitle>
+
+            <div
+              style={{
+                background: "#fff5f7",
+                border: "1px solid #fed7e2",
+                borderRadius: "20px",
+                padding: "28px",
+                marginBottom: "32px",
+                lineHeight: 1.8,
+                color: "#2d3748",
+                fontSize: "16px",
+              }}
+            >
+              <h3
+                style={{
+                  color: "#97266d",
+                  fontSize: "22px",
+                  marginBottom: "12px",
+                }}
+              >
+                🌸 Ծաղիկներ՝ անմիջապես ջերմոցից, սիրով և հոգատարությամբ
+              </h3>
+              <p style={{ marginBottom: "14px" }}>
+                <strong>Areg flowers</strong> ծաղկի սրահը ստեղծվել է մեկ կարևոր
+                գաղափարի շուրջ՝ յուրաքանչյուր հաճախորդի փոխանցել ամենաթարմ,
+                ամենաբուրավետ և երկար կյանք ունեցող ծաղիկները։ Մեր ծաղիկները
+                չեն կորցնում իրենց թարմությունը երկար պահեստավորման պատճառով,
+                քանի որ դրանք գալիս են <strong>ուղիղ ջերմոցից</strong>՝
+                առավոտյան ամենավաղ ժամերին։
+              </p>
+              <p style={{ marginBottom: "14px" }}>
+                Մեր վարդերը, աստրոմերիաները, շքեղ ծաղկեփնջերն ու նրբաճաշակ
+                պսակները առանձնանում են իրենց վառ գույներով, ամուր ցողուններով և
+                անկրկնելի բույրով։ Յուրաքանչյուր ծաղիկ ընտրվում է հատիկ առ
+                հատիկ, որպեսզի ձեր նվերը խոսի ձեր փոխարեն և երկար ժամանակ
+                ուրախացնի ձեր սիրելիներին։
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                Անկախ նրանից՝ ծննդյան տոն է, հարսանեկան արարողություն, սիրո
+                խոստովանություն, թե հատուկ հիշատակի օր, <strong>Areg flowers</strong>-ը
+                երաշխավորում է բարձրագույն որակ, ճաշակով ձևավորում և ժամանակին
+                առաքում։
+              </p>
+            </div>
+
+            <SectionTitle>Մեր թիմը</SectionTitle>
+            <AboutCards style={{ marginBottom: "36px" }}>
+              <Card>
+                <CardTitle>Ավետիսյան Վազգեն</CardTitle>
+                <p
+                  style={{
+                    color: "#d53f8c",
+                    fontWeight: 700,
+                    marginBottom: "8px",
+                  }}
+                >
+                  Կայքի և նախագծի հիմնադիր
+                </p>
+                <CardText>
+                  Areg flowers-ի հիմնադիրը, ով ստեղծել է այս հարթակը՝ ժամանակակից,
+                  հարմար և վստահելի ծաղկային սպասարկում ապահովելու համար։
+                </CardText>
+              </Card>
+
+              <Card>
+                <CardTitle>Ավետիսյան Գարուշ</CardTitle>
+                <p
+                  style={{
+                    color: "#d53f8c",
+                    fontWeight: 700,
+                    marginBottom: "8px",
+                  }}
+                >
+                  Ծաղիկների մատակարար (ուղիղ ջերմոցից)
+                </p>
+                <CardText>
+                  Ապահովում է ամենաթարմ ծաղիկների անմիջական մատակարարումը ուղիղ
+                  ջերմոցից՝ երաշխավորելով բարձր որակ, թարմություն և երկար
+                  պահպանում։
+                </CardText>
+              </Card>
+
+              <Card>
+                <CardTitle>Սաթենիկ Հովսեփյան</CardTitle>
+                <p
+                  style={{
+                    color: "#d53f8c",
+                    fontWeight: 700,
+                    marginBottom: "8px",
+                  }}
+                >
+                  Պսակներ և ծաղկեփնջեր պատրաստող մասնագետ
+                </p>
+                <CardText>
+                  Նուրբ ճաշակով և վարպետությամբ ստեղծում է շքեղ ծաղկեփնջեր ու
+                  խնամքով ձևավորված պսակներ ցանկացած առիթի համար։
+                </CardText>
+              </Card>
+            </AboutCards>
+
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "20px",
+                padding: "26px",
+                marginBottom: "36px",
+              }}
+            >
+              <h3
+                style={{
+                  color: "#97266d",
+                  fontSize: "20px",
+                  marginBottom: "14px",
+                }}
+              >
+                ✨ Ինչո՞ւ են մեր ծաղիկները տարբերվում բոլորից
+              </h3>
+              <ul
+                style={{
+                  paddingLeft: "20px",
+                  lineHeight: 1.9,
+                  color: "#2d3748",
+                  fontSize: "15px",
+                }}
+              >
+                <li>
+                  <strong>100% ջերմոցային թարմություն.</strong> Ավետիսյան Գարուշի
+                  անմիջական մատակարարման շնորհիվ ծաղիկները հասնում են ձեզ
+                  առանց միջնորդների։
+                </li>
+                <li>
+                  <strong>Հեղինակային ձեռքի աշխատանք.</strong> Սաթենիկ
+                  Հովսեփյանի պատրաստած յուրաքանչյուր ծաղկեփունջ և պսակ
+                  անհատական մոտեցում և գեղարվեստական ճաշակ ունի։
+                </li>
+                <li>
+                  <strong>Երկար պահպանվող գեղեցկություն.</strong> Ճիշտ խնամքով
+                  աճեցված վարդերն ու աստրոմերիաները օրեր շարունակ պահպանում են
+                  իրենց թարմ տեսքն ու բույրը։
+                </li>
+                <li>
+                  <strong>Արագ և խնամքով առաքում.</strong> Պատվերները
+                  փաթեթավորվում են հատուկ պաշտպանիչ նյութերով և հասցվում
+                  նշված ժամին։
+                </li>
+              </ul>
+            </div>
+
+            <SectionTitle>Մեր աշխատանքների և ջերմոցի պատկերասրահ (10 նկար)</SectionTitle>
+            <p
+              style={{
+                textAlign: "center",
+                color: "#718096",
+                marginBottom: "22px",
+              }}
+            >
+              Ստորև բաց թողնված 10 տեղերը նախատեսված են ձեր ծաղիկների, ջերմոցի և
+              պատրաստի ծաղկեփնջերի նկարների համար
+            </p>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
+                gap: "18px",
+                marginBottom: "30px",
+              }}
+            >
+              {ABOUT_GALLERY_SLOTS.map((slot) => (
+                <div
+                  key={slot.id}
+                  style={{
+                    height: "220px",
+                    borderRadius: "16px",
+                    border: "2px dashed #f687b3",
+                    background: "#fff5f7",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "16px",
+                    textAlign: "center",
+                    overflow: "hidden",
+                  }}
+                >
+                  {slot.src ? (
+                    <img
+                      src={slot.src}
+                      alt={slot.label}
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        borderRadius: "12px",
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <span style={{ fontSize: "30px", marginBottom: "8px" }}>
+                        🖼️
+                      </span>
+                      <strong
+                        style={{
+                          color: "#97266d",
+                          fontSize: "14px",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        Նկար #{slot.id}
+                      </strong>
+                      <span style={{ fontSize: "12px", color: "#718096" }}>
+                        Բաց թողնված տեղ նկարի համար
+                      </span>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Section>
+      ) : (
+        <>
+          <Hero id="home">
+            <HeroText>
+              <Title>Ծաղիկներ, որոնք խոսում են ձեր փոխարեն</Title>
+              <Subtitle>
+                Areg flowers-ում կգտնես գեղեցիկ ծաղկեփնջեր, վարդեր, աստրոմերիա և
+                նուրբ ծաղկային ձևավորումներ ցանկացած առիթի համար։
+              </Subtitle>
+
+              <Button onClick={() => setCartOpen(true)}>Բացել զամբյուղը</Button>
+            </HeroText>
+
+            <HeroCard>
+              <FlowerImg src={logo} alt="Areg flowers" />
+            </HeroCard>
+          </Hero>
+
+          <Section id="products">
+            <SectionTitle>Մեր ծաղիկները</SectionTitle>
 
             <Cards>
-              {categoryItems[activeCategory].items.map((item) => (
+              {products.map((item) => (
                 <Card key={item.id}>
                   <PlusButton onClick={() => addToCart(item)}>+</PlusButton>
 
@@ -812,46 +1258,105 @@ ${productsText}
                   <CardText>{item.text}</CardText>
                   <Price>{item.price}</Price>
 
-                  <Button $small onClick={() => addToCart(item)}>
+                  <Button onClick={() => addToCart(item)} $small>
                     Ավելացնել զամբյուղ
                   </Button>
                 </Card>
               ))}
             </Cards>
-          </MoreBox>
-        )}
-      </Section>
 
-      <SmallSection id="about">
-        <SectionTitle>Ինչու ընտրել մեզ</SectionTitle>
+            <MoreControls>
+              <h3>Տեսնել բաժինները</h3>
+              <p>Ընտրիր ծաղկի տեսակը և բացիր ապրանքները</p>
 
-        <AboutCards>
-          <Card>
-            <CardTitle>Թարմ ծաղիկներ</CardTitle>
-            <CardText>
-              Ընտրում ենք գեղեցիկ և թարմ ծաղիկներ ամեն պատվերի համար։
-            </CardText>
-          </Card>
+              <div>
+                {Object.entries(categoryItems).map(([key, category]) => (
+                  <MoreButton
+                    key={key}
+                    type="button"
+                    $active={activeCategory === key}
+                    onClick={() =>
+                      setActiveCategory(activeCategory === key ? null : key)
+                    }
+                  >
+                    {category.button}
+                  </MoreButton>
+                ))}
+              </div>
+            </MoreControls>
 
-          <Card>
-            <CardTitle>Գեղեցիկ փաթեթավորում</CardTitle>
-            <CardText>
-              Յուրաքանչյուր ծաղկեփունջ պատրաստվում է խնամքով։
-            </CardText>
-          </Card>
+            {activeCategory && (
+              <MoreBox>
+                <SectionTitle>
+                  {categoryItems[activeCategory].title}
+                </SectionTitle>
 
-          <Card>
-            <CardTitle>Արագ առաքում</CardTitle>
-            <CardText>
-              Առաքում Երևանում և մարզերում՝ հարմար պայմաններով։
-            </CardText>
-          </Card>
-        </AboutCards>
-      </SmallSection>
+                <Cards>
+                  {categoryItems[activeCategory].items.map((item) => (
+                    <Card key={item.id}>
+                      <PlusButton onClick={() => addToCart(item)}>+</PlusButton>
+
+                      <CardImg src={item.img} alt={item.title} />
+                      <CardTitle>{item.title}</CardTitle>
+                      <CardText>{item.text}</CardText>
+                      <Price>{item.price}</Price>
+
+                      <Button $small onClick={() => addToCart(item)}>
+                        Ավելացնել զամբյուղ
+                      </Button>
+                    </Card>
+                  ))}
+                </Cards>
+              </MoreBox>
+            )}
+          </Section>
+
+          <SmallSection id="about">
+            <SectionTitle>Ինչու ընտրել մեզ</SectionTitle>
+
+            <AboutCards>
+              <Card>
+                <CardTitle>Թարմ ծաղիկներ ուղիղ ջերմոցից</CardTitle>
+                <CardText>
+                  Ընտրում ենք գեղեցիկ և թարմ ծաղիկներ ուղիղ ջերմոցից ամեն պատվերի
+                  համար։
+                </CardText>
+              </Card>
+
+              <Card>
+                <CardTitle>Գեղեցիկ փաթեթավորում</CardTitle>
+                <CardText>
+                  Յուրաքանչյուր ծաղկեփունջ և պսակ պատրաստվում է մեծ խնամքով։
+                </CardText>
+              </Card>
+
+              <Card>
+                <CardTitle>Արագ առաքում</CardTitle>
+                <CardText>
+                  Առաքում Երևանում և մարզերում՝ հարմար պայմաններով։
+                </CardText>
+              </Card>
+            </AboutCards>
+
+            <div style={{ textAlign: "center", marginTop: "20px" }}>
+              <Button
+                type="button"
+                $small
+                onClick={() => navigateToSection("about", null)}
+              >
+                Ավելին մեր մասին →
+              </Button>
+            </div>
+          </SmallSection>
+        </>
+      )}
 
       <Footer id="contact">
         <h2>Areg flowers</h2>
-        <p>Ծաղիկներ, որոնք խոսում են ձեր փոխարեն՝ ծաղկեփնջեր, վարդեր, պսակներ և աստրոմերիա</p>
+        <p>
+          Ծաղիկներ, որոնք խոսում են ձեր փոխարեն՝ ծաղկեփնջեր, վարդեր, պսակներ և
+          աստրոմերիա
+        </p>
         <p>Հեռ․ +374 77 88 44 67</p>
       </Footer>
 
@@ -919,7 +1424,11 @@ ${productsText}
               <Button type="button" $small onClick={handleLogout}>
                 Դուրս գալ հաշվից
               </Button>
-              <Button type="button" $small onClick={() => setProfileOpen(false)}>
+              <Button
+                type="button"
+                $small
+                onClick={() => setProfileOpen(false)}
+              >
                 Փակել
               </Button>
             </ModalButtons>
@@ -1006,7 +1515,13 @@ ${productsText}
             </div>
 
             {authError && (
-              <p style={{ color: "#e53e3e", fontSize: "14px", marginBottom: "10px" }}>
+              <p
+                style={{
+                  color: "#e53e3e",
+                  fontSize: "14px",
+                  marginBottom: "10px",
+                }}
+              >
                 {authError}
               </p>
             )}
@@ -1023,12 +1538,14 @@ ${productsText}
                 />
 
                 {authMode === "register" && (
-                  <ModalInput
-                    type="tel"
-                    placeholder="Հեռախոսահամար (ըստ ցանկության)"
-                    value={authForm.phone}
-                    onChange={(e) =>
-                      setAuthForm({ ...authForm, phone: e.target.value })
+                  <PhoneInputWithFlag
+                    countryCode={authForm.countryCode}
+                    onCountryChange={(code) =>
+                      setAuthForm({ ...authForm, countryCode: code })
+                    }
+                    digits={authForm.phoneDigits}
+                    onDigitsChange={(digits) =>
+                      setAuthForm({ ...authForm, phoneDigits: digits })
                     }
                   />
                 )}
@@ -1085,12 +1602,14 @@ ${productsText}
                   }
                 />
 
-                <ModalInput
-                  type="tel"
-                  placeholder="+374 77 12 34 56"
-                  value={authForm.phone}
-                  onChange={(e) =>
-                    setAuthForm({ ...authForm, phone: e.target.value })
+                <PhoneInputWithFlag
+                  countryCode={authForm.countryCode}
+                  onCountryChange={(code) =>
+                    setAuthForm({ ...authForm, countryCode: code })
+                  }
+                  digits={authForm.phoneDigits}
+                  onDigitsChange={(digits) =>
+                    setAuthForm({ ...authForm, phoneDigits: digits })
                   }
                   required
                 />
@@ -1104,15 +1623,21 @@ ${productsText}
             ) : (
               <ModalForm onSubmit={handleVerifyPhoneOtp}>
                 <ModalText>
-                  Կոդն ուղարկվել է {authForm.phone} համարին
+                  Կոդն ուղարկվել է{" "}
+                  {getFullPhone(authForm.countryCode, authForm.phoneDigits)}{" "}
+                  համարին
                 </ModalText>
 
                 <ModalInput
                   type="text"
+                  inputMode="numeric"
                   placeholder="SMS կոդը (օրինակ՝ 123456)"
                   value={authForm.otp}
                   onChange={(e) =>
-                    setAuthForm({ ...authForm, otp: e.target.value })
+                    setAuthForm({
+                      ...authForm,
+                      otp: e.target.value.replace(/\D/g, ""),
+                    })
                   }
                   required
                 />
@@ -1142,13 +1667,8 @@ ${productsText}
             <CloseButton onClick={() => setCartOpen(false)}>×</CloseButton>
 
             <CartHeader>
-              <CartLogo>
-                <img src={logo} alt="Areg flowers" />
-                <div>
-                  <span>Areg flowers</span>
-                  <small>Ձեր զամբյուղը</small>
-                </div>
-              </CartLogo>
+              <CartLogo src={logo} alt="Areg flowers" />
+              <ModalTitle style={{ marginBottom: 0 }}>Ձեր զամբյուղը</ModalTitle>
             </CartHeader>
 
             {cart.length === 0 ? (
@@ -1158,30 +1678,28 @@ ${productsText}
                 <CartItems>
                   {cart.map((item) => (
                     <CartItem key={item.id}>
-                      <img src={item.img} alt={item.title} />
-
                       <div>
-                        <h4>{item.title}</h4>
-                        <p>Գին՝ {item.price}</p>
-                        <p>Քանակ՝ {item.quantity}</p>
+                        <strong>{item.title}</strong>
                         <p>
-                          Ընդհանուր՝{" "}
-                          {getPriceNumber(item.price) * item.quantity} դրամ
+                          {item.price} × {item.quantity}
                         </p>
                       </div>
 
                       <CartActions>
-                        <RoundActionButton onClick={() => addToCart(item)}>
-                          +
-                        </RoundActionButton>
-
                         <RoundActionButton
+                          type="button"
                           onClick={() => minusFromCart(item.id)}
                         >
-                          −
+                          -
                         </RoundActionButton>
-
+                        <RoundActionButton
+                          type="button"
+                          onClick={() => addToCart(item)}
+                        >
+                          +
+                        </RoundActionButton>
                         <DeleteActionButton
+                          type="button"
                           onClick={() => deleteFromCart(item.id)}
                         >
                           ×
@@ -1191,19 +1709,29 @@ ${productsText}
                   ))}
                 </CartItems>
 
-                <h3
-                  style={{
-                    color: "#b83280",
-                    marginBottom: "22px",
-                    textAlign: "center",
-                  }}
-                >
-                  Ընդհանուր գումար՝ {totalPrice} դրամ
-                </h3>
+                <ModalText>
+                  <strong>Ընդհանուր գումար՝ {totalPrice} դրամ</strong>
+                </ModalText>
 
-                <Button onClick={() => setOrderOpen(true)}>
-                  Պատվիրել զամբյուղի ապրանքները
-                </Button>
+                <ModalButtons>
+                  <Button
+                    type="button"
+                    $small
+                    onClick={() => {
+                      setCartOpen(false);
+                      setOrderOpen(true);
+                    }}
+                  >
+                    Պատվիրել
+                  </Button>
+                  <Button
+                    type="button"
+                    $small
+                    onClick={() => setCartOpen(false)}
+                  >
+                    Փակել
+                  </Button>
+                </ModalButtons>
               </>
             )}
           </CartBox>
@@ -1214,11 +1742,7 @@ ${productsText}
         <ModalOverlay>
           <ModalBox>
             <CloseButton onClick={() => setOrderOpen(false)}>×</CloseButton>
-
-            <ModalTitle>Պատվիրել ծաղիկներ</ModalTitle>
-            <ModalText>
-              Լրացրեք տվյալները, և մենք կապ կհաստատենք Ձեզ հետ։
-            </ModalText>
+            <ModalTitle>Ձևակերպել պատվերը</ModalTitle>
 
             <ModalForm onSubmit={handleOrderSubmit}>
               <ModalInput
@@ -1229,24 +1753,27 @@ ${productsText}
                 required
               />
 
-              <ModalInput
-                type="tel"
-                placeholder="Հեռախոսահամար"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              <PhoneInputWithFlag
+                countryCode={form.countryCode}
+                onCountryChange={(code) =>
+                  setForm({ ...form, countryCode: code })
+                }
+                digits={form.phoneDigits}
+                onDigitsChange={(digits) =>
+                  setForm({ ...form, phoneDigits: digits })
+                }
                 required
               />
 
               <ModalInput
                 type="text"
-                placeholder="Հասցե"
+                placeholder="Առաքման հասցեն"
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
                 required
               />
 
               <ModalSelect
-                required
                 value={form.payment}
                 onChange={(e) => setForm({ ...form, payment: e.target.value })}
               >
@@ -1254,15 +1781,20 @@ ${productsText}
                 <option value="card">Քարտով վճարում</option>
               </ModalSelect>
 
-              <ModalText>Պատվերի ընդհանուր գումար՝ {totalPrice} դրամ</ModalText>
+              <ModalText>
+                <strong>Ընդհանուր՝ {totalPrice} դրամ</strong>
+              </ModalText>
 
               <ModalButtons>
-                <Button $small type="submit" disabled={loading}>
-                  {loading ? "Ուղարկվում է..." : "Ուղարկել պատվեր"}
+                <Button type="submit" $small disabled={loading}>
+                  {loading ? "Ուղարկվում է..." : "Հաստատել պատվերը"}
                 </Button>
-
-                <Button $small type="button" onClick={() => setOrderOpen(false)}>
-                  Փակել
+                <Button
+                  type="button"
+                  $small
+                  onClick={() => setOrderOpen(false)}
+                >
+                  Չեղարկել
                 </Button>
               </ModalButtons>
             </ModalForm>
