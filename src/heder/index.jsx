@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { supabase } from "../supabaseClient";
 import {
   Page,
   Header,
@@ -152,20 +153,248 @@ function getPriceNumber(price) {
   return Number(String(price).replace(/,/g, "").replace(" դրամ", ""));
 }
 
+function normalizePhone(rawPhone) {
+  const cleaned = rawPhone.replace(/[^\d+]/g, "");
+  if (!cleaned) return "";
+  if (cleaned.startsWith("+")) return cleaned;
+  if (cleaned.startsWith("0") && cleaned.length === 9) {
+    return `+374${cleaned.slice(1)}`;
+  }
+  if (cleaned.length === 8) {
+    return `+374${cleaned}`;
+  }
+  return `+${cleaned}`;
+}
+
 function FlowerShop() {
   const [activeCategory, setActiveCategory] = useState(null);
   const [orderOpen, setOrderOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [cart, setCart] = useState([]);
   const [success, setSuccess] = useState(false);
+  const [successText, setSuccessText] = useState("Ավելացվեց զամբյուղ ✅");
   const [loading, setLoading] = useState(false);
+
+  // Auth states
+  const [user, setUser] = useState(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMethod, setAuthMethod] = useState("email"); // "email" | "phone"
+  const [authMode, setAuthMode] = useState("login"); // "login" | "register" (for email)
+  const [otpSent, setOtpSent] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authForm, setAuthForm] = useState({
+    fullName: "",
+    email: "",
+    password: "",
+    phone: "",
+    otp: "",
+  });
 
   const [form, setForm] = useState({
     name: "",
     phone: "",
     address: "",
-    payment: "",
+    payment: "cash",
   });
+
+  const showToast = (msg, duration = 2000) => {
+    setSuccessText(msg);
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), duration);
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      const currentUser = data?.session?.user || null;
+      setUser(currentUser);
+      if (currentUser) {
+        setForm((prev) => ({
+          ...prev,
+          name: prev.name || currentUser.user_metadata?.full_name || "",
+          phone: prev.phone || currentUser.phone || currentUser.user_metadata?.phone || "",
+        }));
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user || null;
+      setUser(currentUser);
+      if (currentUser) {
+        setForm((prev) => ({
+          ...prev,
+          name: prev.name || currentUser.user_metadata?.full_name || "",
+          phone: prev.phone || currentUser.phone || currentUser.user_metadata?.phone || "",
+        }));
+      }
+    });
+
+    return () => {
+      mounted = false;
+      listener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  const handleEmailAuth = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const emailClean = authForm.email.trim();
+      if (!emailClean || !authForm.password) {
+        setAuthError("Լրացրեք Gmail/Email-ը և գաղտնաբառը։");
+        return;
+      }
+
+      if (authMode === "register") {
+        const { data, error } = await supabase.auth.signUp({
+          email: emailClean,
+          password: authForm.password,
+          options: {
+            data: {
+              full_name: authForm.fullName.trim(),
+              phone: authForm.phone.trim(),
+            },
+          },
+        });
+
+        if (error) {
+          setAuthError(error.message);
+          return;
+        }
+
+        if (data?.user) {
+          setForm((prev) => ({
+            ...prev,
+            name: authForm.fullName.trim() || prev.name,
+            phone: authForm.phone.trim() || prev.phone,
+          }));
+        }
+
+        setAuthOpen(false);
+        showToast("Գրանցումը հաջողվեց ✅");
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: emailClean,
+          password: authForm.password,
+        });
+
+        if (error) {
+          setAuthError(error.message);
+          return;
+        }
+
+        if (data?.user) {
+          setForm((prev) => ({
+            ...prev,
+            name: prev.name || data.user.user_metadata?.full_name || "",
+            phone: prev.phone || data.user.user_metadata?.phone || "",
+          }));
+        }
+
+        setAuthOpen(false);
+        showToast("Մուտքը հաջողվեց ✅");
+      }
+    } catch (err) {
+      setAuthError("Սխալ տեղի ունեցավ մուտքի/գրանցման ժամանակ։");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSendPhoneOtp = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const formattedPhone = normalizePhone(authForm.phone);
+      if (!formattedPhone || formattedPhone.length < 8) {
+        setAuthError("Մուտքագրեք ճիշտ հեռախոսահամար (օրինակ՝ +37477123456)։");
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: formattedPhone,
+        options: {
+          data: {
+            full_name: authForm.fullName.trim(),
+          },
+        },
+      });
+
+      if (error) {
+        setAuthError(error.message);
+        return;
+      }
+
+      setAuthForm((prev) => ({ ...prev, phone: formattedPhone }));
+      setOtpSent(true);
+      showToast("SMS կոդն ուղարկվեց 📩");
+    } catch (err) {
+      setAuthError("Չհաջողվեց ուղարկել SMS կոդը։");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const formattedPhone = normalizePhone(authForm.phone);
+      const tokenClean = authForm.otp.trim();
+
+      if (!tokenClean) {
+        setAuthError("Մուտքագրեք SMS-ով ստացված կոդը։");
+        return;
+      }
+
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: formattedPhone,
+        token: tokenClean,
+        type: "sms",
+      });
+
+      if (error) {
+        setAuthError(error.message);
+        return;
+      }
+
+      if (authForm.fullName.trim()) {
+        await supabase.auth.updateUser({
+          data: { full_name: authForm.fullName.trim() },
+        });
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        name: authForm.fullName.trim() || prev.name,
+        phone: data?.user?.phone || formattedPhone || prev.phone,
+      }));
+
+      setAuthOpen(false);
+      setOtpSent(false);
+      setAuthForm((prev) => ({ ...prev, otp: "" }));
+      showToast("Մուտքը հեռախոսահամարով հաջողվեց ✅");
+    } catch (err) {
+      setAuthError("Կոդի ստուգման սխալ։");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    showToast("Դուրս եկաք հաշվից");
+  };
 
   const addToCart = (item) => {
     setCart((prev) => {
@@ -182,8 +411,7 @@ function FlowerShop() {
       return [...prev, { ...item, quantity: 1 }];
     });
 
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 1500);
+    showToast("Ավելացվեց զամբյուղ ✅", 1500);
   };
 
   const minusFromCart = (id) => {
@@ -237,6 +465,10 @@ ${index + 1}. ${item.title}
       })
       .join("\n");
 
+    const userAccountInfo = user
+      ? `Հաշիվ: ${user.email || user.phone || user.id}`
+      : "Հաշիվ: Հյուր (առանց մուտքի)";
+
     const orderMessage = `
 🌸 Նոր պատվեր Areg flowers կայքից
 
@@ -244,6 +476,7 @@ ${index + 1}. ${item.title}
 Անուն: ${form.name}
 Հեռախոս: ${form.phone}
 Հասցե: ${form.address}
+${userAccountInfo}
 
 Վճարում
 ${form.payment === "cash" ? "Վճարում առաքման պահին" : "Քարտով վճարում"}
@@ -261,6 +494,7 @@ ${productsText}
       name: form.name,
       phone: form.phone,
       address: form.address,
+      account: userAccountInfo,
       payment:
         form.payment === "cash"
           ? "Վճարում առաքման պահին"
@@ -283,8 +517,6 @@ ${productsText}
 
       const data = await response.json();
 
-      console.log("WEB3FORMS RESPONSE:", data);
-
       if (!data.success) {
         alert(data.message || "Պատվերը չուղարկվեց ❌ Ստուգիր Web3Forms-ը։");
         return;
@@ -296,14 +528,13 @@ ${productsText}
       setCartOpen(false);
       setCart([]);
       setForm({
-        name: "",
-        phone: "",
+        name: user?.user_metadata?.full_name || "",
+        phone: user?.phone || user?.user_metadata?.phone || "",
         address: "",
-        payment: "",
+        payment: "cash",
       });
 
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      showToast("Պատվերը գրանցվեց ✅", 3000);
     } catch (error) {
       console.log("WEB3FORMS FETCH ERROR:", error);
       alert("Սխալ տեղի ունեցավ ❌ Ինտերնետը կամ Web3Forms-ը ստուգիր։");
@@ -311,6 +542,9 @@ ${productsText}
       setLoading(false);
     }
   };
+
+  const userDisplayLabel =
+    user?.user_metadata?.full_name || user?.email || user?.phone || "Հաշիվ";
 
   return (
     <Page>
@@ -325,6 +559,58 @@ ${productsText}
           <a href="#products">Ծաղիկներ</a>
           <a href="#about">Մեր մասին</a>
           <a href="#contact">Կապ</a>
+
+          {user ? (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+              <span
+                style={{
+                  fontSize: "13px",
+                  padding: "6px 10px",
+                  borderRadius: "999px",
+                  background: "#fff0f6",
+                  color: "#b83280",
+                  fontWeight: 600,
+                }}
+              >
+                {userDisplayLabel}
+              </span>
+              <button
+                type="button"
+                onClick={handleLogout}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "999px",
+                  border: "1px solid #d53f8c",
+                  background: "transparent",
+                  color: "#d53f8c",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+              >
+                Ելք
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setAuthError("");
+                setAuthOpen(true);
+              }}
+              style={{
+                padding: "7px 14px",
+                borderRadius: "999px",
+                border: "none",
+                background: "#d53f8c",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: "13px",
+                fontWeight: 600,
+              }}
+            >
+              Մուտք / Գրանցում
+            </button>
+          )}
         </Nav>
       </Header>
 
@@ -446,6 +732,184 @@ ${productsText}
         {cartProductsCount > 0 && <CartCount>{cartProductsCount}</CartCount>}
       </CartButton>
 
+      {authOpen && (
+        <ModalOverlay>
+          <ModalBox>
+            <CloseButton
+              onClick={() => {
+                setAuthOpen(false);
+                setOtpSent(false);
+                setAuthError("");
+              }}
+            >
+              ×
+            </CloseButton>
+
+            <ModalTitle>
+              {authMethod === "email"
+                ? authMode === "register"
+                  ? "Գրանցում Gmail-ով"
+                  : "Մուտք Gmail-ով"
+                : "Մուտք / Գրանցում հեռախոսահամարով"}
+            </ModalTitle>
+
+            <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
+              <Button
+                type="button"
+                $small
+                onClick={() => {
+                  setAuthMethod("email");
+                  setOtpSent(false);
+                  setAuthError("");
+                }}
+              >
+                Gmail / Email
+              </Button>
+              <Button
+                type="button"
+                $small
+                onClick={() => {
+                  setAuthMethod("phone");
+                  setOtpSent(false);
+                  setAuthError("");
+                }}
+              >
+                Հեռախոսահամար
+              </Button>
+            </div>
+
+            {authError && (
+              <p style={{ color: "#e53e3e", fontSize: "14px", marginBottom: "10px" }}>
+                {authError}
+              </p>
+            )}
+
+            {authMethod === "email" ? (
+              <ModalForm onSubmit={handleEmailAuth}>
+                {authMode === "register" && (
+                  <>
+                    <ModalInput
+                      type="text"
+                      placeholder="Ձեր անունը"
+                      value={authForm.fullName}
+                      onChange={(e) =>
+                        setAuthForm({ ...authForm, fullName: e.target.value })
+                      }
+                    />
+                    <ModalInput
+                      type="tel"
+                      placeholder="Հեռախոսահամար (ըստ ցանկության)"
+                      value={authForm.phone}
+                      onChange={(e) =>
+                        setAuthForm({ ...authForm, phone: e.target.value })
+                      }
+                    />
+                  </>
+                )}
+
+                <ModalInput
+                  type="email"
+                  placeholder="Ձեր Gmail հասցեն"
+                  value={authForm.email}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, email: e.target.value })
+                  }
+                  required
+                />
+
+                <ModalInput
+                  type="password"
+                  placeholder="Գաղտնաբառ (առնվազն 6 նիշ)"
+                  value={authForm.password}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, password: e.target.value })
+                  }
+                  required
+                />
+
+                <ModalButtons>
+                  <Button type="submit" $small disabled={authLoading}>
+                    {authLoading
+                      ? "Սպասեք..."
+                      : authMode === "register"
+                      ? "Գրանցվել"
+                      : "Մուտք գործել"}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    $small
+                    onClick={() => {
+                      setAuthMode(authMode === "login" ? "register" : "login");
+                      setAuthError("");
+                    }}
+                  >
+                    {authMode === "login" ? "Նոր հաշիվ" : "Արդեն ունեմ հաշիվ"}
+                  </Button>
+                </ModalButtons>
+              </ModalForm>
+            ) : !otpSent ? (
+              <ModalForm onSubmit={handleSendPhoneOtp}>
+                <ModalInput
+                  type="text"
+                  placeholder="Ձեր անունը (ըստ ցանկության)"
+                  value={authForm.fullName}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, fullName: e.target.value })
+                  }
+                />
+
+                <ModalInput
+                  type="tel"
+                  placeholder="+374 77 12 34 56"
+                  value={authForm.phone}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, phone: e.target.value })
+                  }
+                  required
+                />
+
+                <ModalButtons>
+                  <Button type="submit" $small disabled={authLoading}>
+                    {authLoading ? "Ուղարկվում է..." : "Ուղարկել SMS կոդ"}
+                  </Button>
+                </ModalButtons>
+              </ModalForm>
+            ) : (
+              <ModalForm onSubmit={handleVerifyPhoneOtp}>
+                <ModalText>
+                  Կոդն ուղարկվել է {authForm.phone} համարին
+                </ModalText>
+
+                <ModalInput
+                  type="text"
+                  placeholder="SMS կոդը (օրինակ՝ 123456)"
+                  value={authForm.otp}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, otp: e.target.value })
+                  }
+                  required
+                />
+
+                <ModalButtons>
+                  <Button type="submit" $small disabled={authLoading}>
+                    {authLoading ? "Ստուգվում է..." : "Հաստատել կոդը"}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    $small
+                    onClick={() => setOtpSent(false)}
+                  >
+                    Փոխել համարը
+                  </Button>
+                </ModalButtons>
+              </ModalForm>
+            )}
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
       {cartOpen && (
         <ModalOverlay>
           <CartBox>
@@ -560,9 +1024,6 @@ ${productsText}
                 value={form.payment}
                 onChange={(e) => setForm({ ...form, payment: e.target.value })}
               >
-                <option value="" disabled>
-                  Ընտրել վճարման տարբերակը
-                </option>
                 <option value="cash">Վճարում առաքման պահին</option>
                 <option value="card">Քարտով վճարում</option>
               </ModalSelect>
@@ -583,7 +1044,7 @@ ${productsText}
         </ModalOverlay>
       )}
 
-      {success && <SuccessBox>Ավելացվեց զամբյուղ ✅</SuccessBox>}
+      {success && <SuccessBox>{successText}</SuccessBox>}
     </Page>
   );
 }
