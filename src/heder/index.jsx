@@ -65,7 +65,7 @@ const COUNTRIES = [
 
 const ABOUT_GALLERY_SLOTS = Array.from({ length: 10 }, (_, index) => ({
   id: index + 1,
-  label: `Նկար ${index + 1} (Ավելացրեք ձեր նկարը այստեղ)`,
+  label: `Նկար ${index + 1}`,
   src: "", // Հետո այստեղ կդնեք նկարի հղումը, օրինակ՝ "/images/photo1.jpg"
 }));
 
@@ -166,6 +166,22 @@ const categoryItems = {
   },
 };
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth <= 768 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  return isMobile;
+}
+
 function getPriceNumber(price) {
   return Number(String(price).replace(/,/g, "").replace(" դրամ", ""));
 }
@@ -209,7 +225,6 @@ function PhoneInputWithFlag({
     COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
 
   const handleDigitsInput = (e) => {
-    // Թույլատրում ենք ՄԻԱՅՆ թվեր (0-9)
     const numericOnly = e.target.value.replace(/\D/g, "");
     onDigitsChange(numericOnly);
   };
@@ -220,10 +235,11 @@ function PhoneInputWithFlag({
         style={{
           display: "flex",
           alignItems: "center",
-          border: "1px solid #e2e8f0",
-          borderRadius: "10px",
+          border: "1.5px solid #f3c6d8",
+          borderRadius: "14px",
           background: "#fff",
           overflow: "hidden",
+          boxShadow: "0 4px 14px rgba(213, 63, 140, 0.06)",
         }}
       >
         <button
@@ -233,20 +249,21 @@ function PhoneInputWithFlag({
             display: "inline-flex",
             alignItems: "center",
             gap: "6px",
-            padding: "11px 12px",
+            padding: "12px 12px",
             border: "none",
-            borderRight: "1px solid #e2e8f0",
-            background: "#fff5f7",
+            borderRight: "1px solid #fed7e2",
+            background: "linear-gradient(135deg, #fff5f7 0%, #fed7e2 100%)",
             cursor: "pointer",
             fontSize: "14px",
-            fontWeight: 600,
-            color: "#2d3748",
+            fontWeight: 700,
+            color: "#97266d",
             whiteSpace: "nowrap",
+            minHeight: "46px",
           }}
         >
           <span style={{ fontSize: "18px" }}>{selectedCountry.flag}</span>
           <span>{selectedCountry.dial}</span>
-          <span style={{ fontSize: "10px", color: "#718096" }}>▼</span>
+          <span style={{ fontSize: "10px", color: "#97266d" }}>▼</span>
         </button>
 
         <input
@@ -261,10 +278,12 @@ function PhoneInputWithFlag({
             flex: 1,
             border: "none",
             outline: "none",
-            padding: "11px 12px",
-            fontSize: "14px",
+            padding: "12px 14px",
+            fontSize: "15px",
             color: "#1a202c",
             width: "100%",
+            minHeight: "46px",
+            background: "#fff",
           }}
         />
       </div>
@@ -273,16 +292,16 @@ function PhoneInputWithFlag({
         <div
           style={{
             position: "absolute",
-            top: "105%",
+            top: "108%",
             left: 0,
             right: 0,
-            maxHeight: "200px",
+            maxHeight: "220px",
             overflowY: "auto",
             background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: "10px",
-            boxShadow: "0 10px 25px rgba(0,0,0,0.12)",
-            zIndex: 50,
+            border: "1px solid #fed7e2",
+            borderRadius: "14px",
+            boxShadow: "0 14px 30px rgba(151, 38, 109, 0.16)",
+            zIndex: 80,
           }}
         >
           {COUNTRIES.map((country) => (
@@ -298,21 +317,24 @@ function PhoneInputWithFlag({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                padding: "9px 12px",
+                padding: "11px 14px",
                 border: "none",
-                borderBottom: "1px solid #f7fafc",
+                borderBottom: "1px solid #fff5f7",
                 background:
                   country.code === selectedCountry.code ? "#fff5f7" : "#fff",
                 cursor: "pointer",
                 fontSize: "14px",
                 textAlign: "left",
+                minHeight: "44px",
               }}
             >
-              <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 <span style={{ fontSize: "18px" }}>{country.flag}</span>
-                <span>{country.name}</span>
+                <span style={{ color: "#2d3748" }}>{country.name}</span>
               </span>
-              <span style={{ fontWeight: 600, color: "#d53f8c" }}>
+              <span style={{ fontWeight: 700, color: "#d53f8c" }}>
                 {country.dial}
               </span>
             </button>
@@ -347,6 +369,7 @@ function writeCartToStorage(userId, items) {
 }
 
 function FlowerShop() {
+  const isMobile = useIsMobile();
   const [activePage, setActivePage] = useState("home"); // "home" կամ "about"
   const [activeCategory, setActiveCategory] = useState(null);
   const [orderOpen, setOrderOpen] = useState(false);
@@ -629,7 +652,7 @@ function FlowerShop() {
         return;
       }
 
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         phone: formattedPhone,
         token: tokenClean,
         type: "sms",
@@ -865,59 +888,111 @@ ${productsText}
   };
 
   return (
-    <Page>
-      <Header>
+    <Page
+      style={{
+        background:
+          "linear-gradient(180deg, #fff9fb 0%, #ffffff 35%, #fff5f8 100%)",
+        minHeight: "100vh",
+        overflowX: "hidden",
+      }}
+    >
+      <Header
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+          backdropFilter: "blur(12px)",
+          background: "rgba(255, 255, 255, 0.92)",
+          borderBottom: "1px solid #fed7e2",
+          padding: isMobile ? "10px 14px" : "14px 28px",
+          flexWrap: "wrap",
+          gap: isMobile ? "8px" : "16px",
+        }}
+      >
         <Logo
           onClick={() => navigateToSection("home", null)}
-          style={{ cursor: "pointer" }}
+          style={{
+            cursor: "pointer",
+            fontSize: isMobile ? "17px" : "20px",
+          }}
         >
-          <img src={logo} alt="Areg flowers" />
-          <span>Areg flowers</span>
+          <img
+            src={logo}
+            alt="Areg flowers"
+            style={{
+              width: isMobile ? "34px" : "42px",
+              height: isMobile ? "34px" : "42px",
+              borderRadius: "12px",
+              objectFit: "cover",
+            }}
+          />
+          <span style={{ fontWeight: 800, color: "#97266d" }}>
+            Areg flowers
+          </span>
         </Logo>
 
-        <Nav>
-          <a
-            href="#home"
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToSection("home", "home");
+        <Nav
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: isMobile ? "8px" : "18px",
+            fontSize: isMobile ? "12.5px" : "14px",
+            width: isMobile ? "100%" : "auto",
+            justifyContent: isMobile ? "space-between" : "flex-end",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: isMobile ? "10px" : "18px",
+              flexWrap: "wrap",
             }}
           >
-            Գլխավոր
-          </a>
-          <a
-            href="#products"
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToSection("home", "products");
-            }}
-          >
-            Ծաղիկներ
-          </a>
-          <a
-            href="#about-page"
-            onClick={(e) => {
-              e.preventDefault();
-              navigateToSection("about", null);
-            }}
-            style={
-              activePage === "about"
-                ? { color: "#d53f8c", fontWeight: 700 }
-                : undefined
-            }
-          >
-            Մեր մասին
-          </a>
-          <a
-            href="#contact"
-            onClick={(e) => {
-              e.preventDefault();
-              const el = document.getElementById("contact");
-              if (el) el.scrollIntoView({ behavior: "smooth" });
-            }}
-          >
-            Կապ
-          </a>
+            <a
+              href="#home"
+              onClick={(e) => {
+                e.preventDefault();
+                navigateToSection("home", "home");
+              }}
+            >
+              Գլխավոր
+            </a>
+            <a
+              href="#products"
+              onClick={(e) => {
+                e.preventDefault();
+                navigateToSection("home", "products");
+              }}
+            >
+              Ծաղիկներ
+            </a>
+            <a
+              href="#about-page"
+              onClick={(e) => {
+                e.preventDefault();
+                navigateToSection("about", null);
+              }}
+              style={
+                activePage === "about"
+                  ? { color: "#d53f8c", fontWeight: 700 }
+                  : undefined
+              }
+            >
+              Մեր մասին
+            </a>
+            <a
+              href="#contact"
+              onClick={(e) => {
+                e.preventDefault();
+                const el = document.getElementById("contact");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              Կապ
+            </a>
+          </div>
 
           {user ? (
             <button
@@ -926,15 +1001,16 @@ ${productsText}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "8px",
-                padding: "5px 12px 5px 6px",
+                gap: "7px",
+                padding: isMobile ? "5px 10px 5px 5px" : "6px 13px 6px 6px",
                 borderRadius: "999px",
-                border: "1px solid #f687b3",
-                background: "#fff5f7",
+                border: "1.5px solid #f687b3",
+                background: "linear-gradient(135deg, #fff5f7 0%, #fed7e2 100%)",
                 color: "#97266d",
                 cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: 600,
+                fontSize: isMobile ? "12px" : "13px",
+                fontWeight: 700,
+                boxShadow: "0 4px 12px rgba(213, 63, 140, 0.14)",
               }}
             >
               {userAvatar ? (
@@ -954,7 +1030,7 @@ ${productsText}
                     width: "26px",
                     height: "26px",
                     borderRadius: "50%",
-                    background: "#d53f8c",
+                    background: "linear-gradient(135deg, #d53f8c 0%, #97266d 100%)",
                     color: "#fff",
                     display: "inline-flex",
                     alignItems: "center",
@@ -976,14 +1052,15 @@ ${productsText}
                 setAuthOpen(true);
               }}
               style={{
-                padding: "7px 14px",
+                padding: isMobile ? "7px 13px" : "8px 16px",
                 borderRadius: "999px",
                 border: "none",
-                background: "#d53f8c",
+                background: "linear-gradient(135deg, #e53e8d 0%, #b83280 100%)",
                 color: "#fff",
                 cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: 600,
+                fontSize: isMobile ? "12px" : "13px",
+                fontWeight: 700,
+                boxShadow: "0 6px 16px rgba(213, 63, 140, 0.28)",
               }}
             >
               Մուտք / Գրանցում
@@ -993,201 +1070,325 @@ ${productsText}
       </Header>
 
       {activePage === "about" ? (
-        <Section id="about-page" style={{ paddingTop: "36px" }}>
+        <Section
+          id="about-page"
+          style={{
+            paddingTop: isMobile ? "20px" : "36px",
+            paddingLeft: isMobile ? "14px" : "24px",
+            paddingRight: isMobile ? "14px" : "24px",
+          }}
+        >
           <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-            <div style={{ marginBottom: "20px" }}>
+            <div style={{ marginBottom: "18px" }}>
               <Button
                 type="button"
                 $small
                 onClick={() => navigateToSection("home", null)}
+                style={{
+                  borderRadius: "999px",
+                  padding: "9px 16px",
+                }}
               >
                 ← Վերադառնալ գլխավոր էջ
               </Button>
             </div>
 
-            <SectionTitle>Մեր մասին — Areg flowers</SectionTitle>
-
             <div
               style={{
-                background: "#fff5f7",
-                border: "1px solid #fed7e2",
-                borderRadius: "20px",
-                padding: "28px",
-                marginBottom: "32px",
+                background:
+                  "linear-gradient(135deg, #fff0f6 0%, #fff9fb 60%, #ffe3ec 100%)",
+                border: "1px solid #fbb6ce",
+                borderRadius: isMobile ? "22px" : "28px",
+                padding: isMobile ? "20px 16px" : "32px",
+                marginBottom: "28px",
                 lineHeight: 1.8,
                 color: "#2d3748",
-                fontSize: "16px",
+                fontSize: isMobile ? "14.5px" : "16px",
+                boxShadow: "0 14px 34px rgba(213, 63, 140, 0.08)",
               }}
             >
-              <h3
+              <div
                 style={{
-                  color: "#97266d",
-                  fontSize: "22px",
+                  display: "inline-block",
+                  background: "#fff",
+                  color: "#b83280",
+                  border: "1px solid #f687b3",
+                  borderRadius: "999px",
+                  padding: "5px 12px",
+                  fontSize: "12px",
+                  fontWeight: 700,
                   marginBottom: "12px",
                 }}
               >
-                🌸 Ծաղիկներ՝ անմիջապես ջերմոցից, սիրով և հոգատարությամբ
-              </h3>
+                🌸 AREG FLOWERS • ՄԵՐ ՊԱՏՄՈՒԹՅՈՒՆԸ
+              </div>
+
+              <h2
+                style={{
+                  color: "#97266d",
+                  fontSize: isMobile ? "21px" : "26px",
+                  marginBottom: "12px",
+                  lineHeight: 1.35,
+                }}
+              >
+                Ծաղիկներ՝ անմիջապես ջերմոցից, յուրաքանչյուր զգացմունքի համար
+              </h2>
+
               <p style={{ marginBottom: "14px" }}>
-                <strong>Areg flowers</strong> ծաղկի սրահը ստեղծվել է մեկ կարևոր
-                գաղափարի շուրջ՝ յուրաքանչյուր հաճախորդի փոխանցել ամենաթարմ,
-                ամենաբուրավետ և երկար կյանք ունեցող ծաղիկները։ Մեր ծաղիկները
-                չեն կորցնում իրենց թարմությունը երկար պահեստավորման պատճառով,
-                քանի որ դրանք գալիս են <strong>ուղիղ ջերմոցից</strong>՝
-                առավոտյան ամենավաղ ժամերին։
+                <strong>Areg flowers</strong> ծաղկի սրահը ստեղծվել է մեկ պարզ ու
+                ազնիվ նպատակով՝ մարդկանց նվիրել ամենաթարմ, ամենակենդանի և
+                ամենաբուրավետ ծաղիկները։ Մեր ծաղիկները չեն անցնում օրեր շարունակ
+                ձգվող պահեստային ճանապարհներով. դրանք գալիս են{" "}
+                <strong>ուղիղ ջերմոցից</strong>՝ պահպանելով իրենց բնական
+                փայլը, ամուր ցողուններն ու թարմությունը։
               </p>
+
               <p style={{ marginBottom: "14px" }}>
-                Մեր վարդերը, աստրոմերիաները, շքեղ ծաղկեփնջերն ու նրբաճաշակ
-                պսակները առանձնանում են իրենց վառ գույներով, ամուր ցողուններով և
-                անկրկնելի բույրով։ Յուրաքանչյուր ծաղիկ ընտրվում է հատիկ առ
-                հատիկ, որպեսզի ձեր նվերը խոսի ձեր փոխարեն և երկար ժամանակ
-                ուրախացնի ձեր սիրելիներին։
+                Մեր նրբագեղ վարդերը, գունագեղ աստրոմերիաները, շքեղ
+                ծաղկեփնջերն ու խնամքով հյուսված պսակները ստեղծված են այնպես, որ
+                առաջին իսկ հայացքից հմայեն։ Երբ ծաղիկը թարմ է ու սիրով
+                պատրաստված, այն դառնում է ոչ միայն գեղեցիկ նվեր, այլև ջերմ
+                խոսք՝ առանց ավելորդ բառերի։
               </p>
+
               <p style={{ marginBottom: 0 }}>
-                Անկախ նրանից՝ ծննդյան տոն է, հարսանեկան արարողություն, սիրո
-                խոստովանություն, թե հատուկ հիշատակի օր, <strong>Areg flowers</strong>-ը
-                երաշխավորում է բարձրագույն որակ, ճաշակով ձևավորում և ժամանակին
-                առաքում։
+                Անկախ նրանից՝ նշում եք ծննդյան օր, սիրո տարեդարձ, տոնական
+                հանդիսություն, թե ցանկանում եք հարգանքի ու հիշատակի խորը տուրք
+                մատուցել, <strong>Areg flowers</strong>-ը կանգնած է ձեր կողքին՝
+                բարձր որակով, ճաշակով և հոգատարությամբ։
               </p>
             </div>
 
-            <SectionTitle>Մեր թիմը</SectionTitle>
-            <AboutCards style={{ marginBottom: "36px" }}>
-              <Card>
-                <CardTitle>Ավետիսյան Վազգեն</CardTitle>
+            <SectionTitle style={{ fontSize: isMobile ? "22px" : "28px" }}>
+              Մեր թիմը
+            </SectionTitle>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(3, minmax(0, 1fr))",
+                gap: "16px",
+                marginBottom: "32px",
+              }}
+            >
+              <div
+                style={{
+                  background: "#fff",
+                  border: "1px solid #fed7e2",
+                  borderRadius: "20px",
+                  padding: "20px",
+                  boxShadow: "0 10px 24px rgba(151, 38, 109, 0.06)",
+                }}
+              >
+                <div style={{ fontSize: "24px", marginBottom: "8px" }}>🌿</div>
+                <h3
+                  style={{
+                    color: "#1a202c",
+                    fontSize: "18px",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Ավետիսյան Վազգեն
+                </h3>
                 <p
                   style={{
                     color: "#d53f8c",
                     fontWeight: 700,
-                    marginBottom: "8px",
+                    fontSize: "13.5px",
+                    marginBottom: "10px",
                   }}
                 >
                   Կայքի և նախագծի հիմնադիր
                 </p>
-                <CardText>
-                  Areg flowers-ի հիմնադիրը, ով ստեղծել է այս հարթակը՝ ժամանակակից,
-                  հարմար և վստահելի ծաղկային սպասարկում ապահովելու համար։
-                </CardText>
-              </Card>
+                <p
+                  style={{
+                    color: "#4a5568",
+                    fontSize: "14px",
+                    lineHeight: 1.65,
+                    margin: 0,
+                  }}
+                >
+                  Areg flowers-ի հիմնադիրը, ով ստեղծել է կայքը՝ ծաղկային
+                  պատվերներն առավել պարզ, արագ ու վստահելի դարձնելու համար։
+                </p>
+              </div>
 
-              <Card>
-                <CardTitle>Ավետիսյան Գարուշ</CardTitle>
+              <div
+                style={{
+                  background: "#fff",
+                  border: "1px solid #fed7e2",
+                  borderRadius: "20px",
+                  padding: "20px",
+                  boxShadow: "0 10px 24px rgba(151, 38, 109, 0.06)",
+                }}
+              >
+                <div style={{ fontSize: "24px", marginBottom: "8px" }}>🌱</div>
+                <h3
+                  style={{
+                    color: "#1a202c",
+                    fontSize: "18px",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Ավետիսյան Գարուշ
+                </h3>
                 <p
                   style={{
                     color: "#d53f8c",
                     fontWeight: 700,
-                    marginBottom: "8px",
+                    fontSize: "13.5px",
+                    marginBottom: "10px",
                   }}
                 >
                   Ծաղիկների մատակարար (ուղիղ ջերմոցից)
                 </p>
-                <CardText>
+                <p
+                  style={{
+                    color: "#4a5568",
+                    fontSize: "14px",
+                    lineHeight: 1.65,
+                    margin: 0,
+                  }}
+                >
                   Ապահովում է ամենաթարմ ծաղիկների անմիջական մատակարարումը ուղիղ
-                  ջերմոցից՝ երաշխավորելով բարձր որակ, թարմություն և երկար
-                  պահպանում։
-                </CardText>
-              </Card>
+                  ջերմոցից՝ երաշխավորելով բարձր որակ և երկար կյանք ծաղկամանում։
+                </p>
+              </div>
 
-              <Card>
-                <CardTitle>Սաթենիկ Հովսեփյան</CardTitle>
+              <div
+                style={{
+                  background: "#fff",
+                  border: "1px solid #fed7e2",
+                  borderRadius: "20px",
+                  padding: "20px",
+                  boxShadow: "0 10px 24px rgba(151, 38, 109, 0.06)",
+                }}
+              >
+                <div style={{ fontSize: "24px", marginBottom: "8px" }}>💐</div>
+                <h3
+                  style={{
+                    color: "#1a202c",
+                    fontSize: "18px",
+                    marginBottom: "4px",
+                  }}
+                >
+                  Սաթենիկ Հովսեփյան
+                </h3>
                 <p
                   style={{
                     color: "#d53f8c",
                     fontWeight: 700,
-                    marginBottom: "8px",
+                    fontSize: "13.5px",
+                    marginBottom: "10px",
                   }}
                 >
                   Պսակներ և ծաղկեփնջեր պատրաստող մասնագետ
                 </p>
-                <CardText>
-                  Նուրբ ճաշակով և վարպետությամբ ստեղծում է շքեղ ծաղկեփնջեր ու
-                  խնամքով ձևավորված պսակներ ցանկացած առիթի համար։
-                </CardText>
-              </Card>
-            </AboutCards>
+                <p
+                  style={{
+                    color: "#4a5568",
+                    fontSize: "14px",
+                    lineHeight: 1.65,
+                    margin: 0,
+                  }}
+                >
+                  Նուրբ ճաշակով ու ձեռքի վարպետությամբ ձևավորում է շքեղ
+                  ծաղկեփնջեր և խնամքով պատրաստված պսակներ։
+                </p>
+              </div>
+            </div>
 
             <div
               style={{
                 background: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "20px",
-                padding: "26px",
-                marginBottom: "36px",
+                border: "1px solid #fed7e2",
+                borderRadius: isMobile ? "20px" : "24px",
+                padding: isMobile ? "18px 16px" : "28px",
+                marginBottom: "32px",
+                boxShadow: "0 10px 24px rgba(151, 38, 109, 0.05)",
               }}
             >
               <h3
                 style={{
                   color: "#97266d",
-                  fontSize: "20px",
-                  marginBottom: "14px",
+                  fontSize: isMobile ? "18px" : "21px",
+                  marginBottom: "12px",
                 }}
               >
-                ✨ Ինչո՞ւ են մեր ծաղիկները տարբերվում բոլորից
+                ✨ Ինչո՞ւ են մեր ծաղիկները սիրված ու առանձնահատուկ
               </h3>
               <ul
                 style={{
-                  paddingLeft: "20px",
-                  lineHeight: 1.9,
+                  paddingLeft: "18px",
+                  lineHeight: 1.85,
                   color: "#2d3748",
-                  fontSize: "15px",
+                  fontSize: isMobile ? "14px" : "15.5px",
+                  margin: 0,
                 }}
               >
                 <li>
-                  <strong>100% ջերմոցային թարմություն.</strong> Ավետիսյան Գարուշի
-                  անմիջական մատակարարման շնորհիվ ծաղիկները հասնում են ձեզ
-                  առանց միջնորդների։
+                  <strong>Ուղիղ ջերմոցից՝ առանց ավելորդ կանգառների.</strong>{" "}
+                  Ավետիսյան Գարուշի շնորհիվ ծաղիկները հասնում են թարմ, գունեղ ու
+                  կենսունակ։
                 </li>
                 <li>
-                  <strong>Հեղինակային ձեռքի աշխատանք.</strong> Սաթենիկ
-                  Հովսեփյանի պատրաստած յուրաքանչյուր ծաղկեփունջ և պսակ
-                  անհատական մոտեցում և գեղարվեստական ճաշակ ունի։
+                  <strong>Անհատական ձեռքի աշխատանք.</strong> Սաթենիկ
+                  Հովսեփյանը յուրաքանչյուր ծաղկեփունջ և պսակ պատրաստում է
+                  հոգով, ներդաշնակ գույներով և ճշգրիտ համաչափությամբ։
                 </li>
                 <li>
-                  <strong>Երկար պահպանվող գեղեցկություն.</strong> Ճիշտ խնամքով
-                  աճեցված վարդերն ու աստրոմերիաները օրեր շարունակ պահպանում են
-                  իրենց թարմ տեսքն ու բույրը։
+                  <strong>Երկար պահպանվող թարմություն.</strong> Ընտրվում են
+                  միայն որակյալ ու առողջ ծաղիկներ, որոնք երկար են մնում
+                  թարմ։
                 </li>
                 <li>
-                  <strong>Արագ և խնամքով առաքում.</strong> Պատվերները
-                  փաթեթավորվում են հատուկ պաշտպանիչ նյութերով և հասցվում
-                  նշված ժամին։
+                  <strong>Հարմար ու արագ պատվեր.</strong> Ամբողջ գործընթացը՝
+                  զամբյուղից մինչև առաքում, հարմարեցված է նաև հեռախոսով
+                  արագ օգտվելու համար։
                 </li>
               </ul>
             </div>
 
-            <SectionTitle>Մեր աշխատանքների և ջերմոցի պատկերասրահ (10 նկար)</SectionTitle>
+            <SectionTitle style={{ fontSize: isMobile ? "21px" : "26px" }}>
+              Մեր ծաղիկների և աշխատանքների սրահ (10 նկար)
+            </SectionTitle>
             <p
               style={{
                 textAlign: "center",
                 color: "#718096",
-                marginBottom: "22px",
+                fontSize: isMobile ? "13.5px" : "14.5px",
+                marginBottom: "20px",
               }}
             >
-              Ստորև բաց թողնված 10 տեղերը նախատեսված են ձեր ծաղիկների, ջերմոցի և
-              պատրաստի ծաղկեփնջերի նկարների համար
+              10 բաց թողնված նկարի տեղ՝ ձեր ապագա լուսանկարների համար
             </p>
 
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
-                gap: "18px",
-                marginBottom: "30px",
+                gridTemplateColumns: isMobile
+                  ? "repeat(2, minmax(0, 1fr))"
+                  : "repeat(5, minmax(0, 1fr))",
+                gap: isMobile ? "12px" : "16px",
+                marginBottom: "24px",
               }}
             >
               {ABOUT_GALLERY_SLOTS.map((slot) => (
                 <div
                   key={slot.id}
                   style={{
-                    height: "220px",
-                    borderRadius: "16px",
+                    height: isMobile ? "155px" : "195px",
+                    borderRadius: "18px",
                     border: "2px dashed #f687b3",
-                    background: "#fff5f7",
+                    background:
+                      "linear-gradient(180deg, #fff8fb 0%, #fff0f6 100%)",
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    padding: "16px",
+                    padding: "12px",
                     textAlign: "center",
                     overflow: "hidden",
                   }}
@@ -1200,25 +1401,30 @@ ${productsText}
                         width: "100%",
                         height: "100%",
                         objectFit: "cover",
-                        borderRadius: "12px",
+                        borderRadius: "14px",
                       }}
                     />
                   ) : (
                     <>
-                      <span style={{ fontSize: "30px", marginBottom: "8px" }}>
+                      <span
+                        style={{
+                          fontSize: isMobile ? "24px" : "28px",
+                          marginBottom: "6px",
+                        }}
+                      >
                         🖼️
                       </span>
                       <strong
                         style={{
                           color: "#97266d",
-                          fontSize: "14px",
-                          marginBottom: "4px",
+                          fontSize: "13px",
+                          marginBottom: "2px",
                         }}
                       >
                         Նկար #{slot.id}
                       </strong>
-                      <span style={{ fontSize: "12px", color: "#718096" }}>
-                        Բաց թողնված տեղ նկարի համար
+                      <span style={{ fontSize: "11px", color: "#718096" }}>
+                        Դատարկ տեղ նկարի համար
                       </span>
                     </>
                   )}
@@ -1229,47 +1435,181 @@ ${productsText}
         </Section>
       ) : (
         <>
-          <Hero id="home">
-            <HeroText>
-              <Title>Ծաղիկներ, որոնք խոսում են ձեր փոխարեն</Title>
-              <Subtitle>
+          <Hero
+            id="home"
+            style={{
+              flexDirection: isMobile ? "column-reverse" : "row",
+              padding: isMobile ? "22px 16px 28px" : "48px 28px",
+              gap: isMobile ? "20px" : "36px",
+              textAlign: isMobile ? "center" : "left",
+            }}
+          >
+            <HeroText style={{ maxWidth: isMobile ? "100%" : "560px" }}>
+              <div
+                style={{
+                  display: "inline-block",
+                  background: "#fff0f6",
+                  color: "#b83280",
+                  border: "1px solid #fbb6ce",
+                  borderRadius: "999px",
+                  padding: "5px 12px",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  marginBottom: "12px",
+                }}
+              >
+                🌸 Ուղիղ ջերմոցից • Թարմ ու բուրավետ
+              </div>
+
+              <Title
+                style={{
+                  fontSize: isMobile ? "27px" : "42px",
+                  lineHeight: 1.22,
+                  marginBottom: "12px",
+                }}
+              >
+                Ծաղիկներ, որոնք խոսում են ձեր փոխարեն
+              </Title>
+
+              <Subtitle
+                style={{
+                  fontSize: isMobile ? "14.5px" : "17px",
+                  lineHeight: 1.7,
+                  marginBottom: "20px",
+                }}
+              >
                 Areg flowers-ում կգտնես գեղեցիկ ծաղկեփնջեր, վարդեր, աստրոմերիա և
-                նուրբ ծաղկային ձևավորումներ ցանկացած առիթի համար։
+                պսակներ՝ անմիջապես ջերմոցից՝ յուրաքանչյուր առիթի համար։
               </Subtitle>
 
-              <Button onClick={() => setCartOpen(true)}>Բացել զամբյուղը</Button>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                  justifyContent: isMobile ? "center" : "flex-start",
+                }}
+              >
+                <Button
+                  onClick={() => setCartOpen(true)}
+                  style={{
+                    borderRadius: "999px",
+                    padding: isMobile ? "11px 20px" : "12px 24px",
+                    boxShadow: "0 8px 20px rgba(213, 63, 140, 0.25)",
+                  }}
+                >
+                  Բացել զամբյուղը
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => navigateToSection("about", null)}
+                  style={{
+                    borderRadius: "999px",
+                    padding: isMobile ? "11px 18px" : "12px 22px",
+                    background: "#fff",
+                    color: "#97266d",
+                    border: "1.5px solid #f687b3",
+                  }}
+                >
+                  Մեր մասին
+                </Button>
+              </div>
             </HeroText>
 
-            <HeroCard>
-              <FlowerImg src={logo} alt="Areg flowers" />
+            <HeroCard
+              style={{
+                width: isMobile ? "100%" : "auto",
+                maxWidth: isMobile ? "270px" : "380px",
+                borderRadius: "26px",
+                padding: "14px",
+                boxShadow: "0 16px 36px rgba(213, 63, 140, 0.14)",
+              }}
+            >
+              <FlowerImg
+                src={logo}
+                alt="Areg flowers"
+                style={{
+                  width: "100%",
+                  borderRadius: "20px",
+                  display: "block",
+                }}
+              />
             </HeroCard>
           </Hero>
 
-          <Section id="products">
-            <SectionTitle>Մեր ծաղիկները</SectionTitle>
+          <Section
+            id="products"
+            style={{
+              padding: isMobile ? "24px 14px" : "44px 28px",
+            }}
+          >
+            <SectionTitle style={{ fontSize: isMobile ? "22px" : "30px" }}>
+              Մեր ծաղիկները
+            </SectionTitle>
 
-            <Cards>
+            <Cards
+              style={{
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(4, minmax(0, 1fr))",
+                gap: isMobile ? "16px" : "22px",
+              }}
+            >
               {products.map((item) => (
-                <Card key={item.id}>
+                <Card
+                  key={item.id}
+                  style={{
+                    borderRadius: "22px",
+                    border: "1px solid #fed7e2",
+                    boxShadow: "0 10px 24px rgba(151, 38, 109, 0.06)",
+                  }}
+                >
                   <PlusButton onClick={() => addToCart(item)}>+</PlusButton>
 
-                  <CardImg src={item.img} alt={item.title} />
+                  <CardImg
+                    src={item.img}
+                    alt={item.title}
+                    style={{
+                      height: isMobile ? "190px" : "200px",
+                      borderRadius: "16px",
+                      objectFit: "cover",
+                    }}
+                  />
                   <CardTitle>{item.title}</CardTitle>
                   <CardText>{item.text}</CardText>
                   <Price>{item.price}</Price>
 
-                  <Button onClick={() => addToCart(item)} $small>
+                  <Button
+                    onClick={() => addToCart(item)}
+                    $small
+                    style={{
+                      borderRadius: "999px",
+                      width: isMobile ? "100%" : "auto",
+                    }}
+                  >
                     Ավելացնել զամբյուղ
                   </Button>
                 </Card>
               ))}
             </Cards>
 
-            <MoreControls>
+            <MoreControls
+              style={{
+                borderRadius: "22px",
+                padding: isMobile ? "20px 14px" : "28px",
+              }}
+            >
               <h3>Տեսնել բաժինները</h3>
               <p>Ընտրիր ծաղկի տեսակը և բացիր ապրանքները</p>
 
-              <div>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                  gap: "8px",
+                }}
+              >
                 {Object.entries(categoryItems).map(([key, category]) => (
                   <MoreButton
                     key={key}
@@ -1278,6 +1618,7 @@ ${productsText}
                     onClick={() =>
                       setActiveCategory(activeCategory === key ? null : key)
                     }
+                    style={{ borderRadius: "999px" }}
                   >
                     {category.button}
                   </MoreButton>
@@ -1291,17 +1632,45 @@ ${productsText}
                   {categoryItems[activeCategory].title}
                 </SectionTitle>
 
-                <Cards>
+                <Cards
+                  style={{
+                    gridTemplateColumns: isMobile
+                      ? "1fr"
+                      : "repeat(4, minmax(0, 1fr))",
+                    gap: isMobile ? "14px" : "20px",
+                  }}
+                >
                   {categoryItems[activeCategory].items.map((item) => (
-                    <Card key={item.id}>
+                    <Card
+                      key={item.id}
+                      style={{
+                        borderRadius: "20px",
+                        border: "1px solid #fed7e2",
+                      }}
+                    >
                       <PlusButton onClick={() => addToCart(item)}>+</PlusButton>
 
-                      <CardImg src={item.img} alt={item.title} />
+                      <CardImg
+                        src={item.img}
+                        alt={item.title}
+                        style={{
+                          height: isMobile ? "180px" : "190px",
+                          borderRadius: "14px",
+                          objectFit: "cover",
+                        }}
+                      />
                       <CardTitle>{item.title}</CardTitle>
                       <CardText>{item.text}</CardText>
                       <Price>{item.price}</Price>
 
-                      <Button $small onClick={() => addToCart(item)}>
+                      <Button
+                        $small
+                        onClick={() => addToCart(item)}
+                        style={{
+                          borderRadius: "999px",
+                          width: isMobile ? "100%" : "auto",
+                        }}
+                      >
                         Ավելացնել զամբյուղ
                       </Button>
                     </Card>
@@ -1311,11 +1680,30 @@ ${productsText}
             )}
           </Section>
 
-          <SmallSection id="about">
-            <SectionTitle>Ինչու ընտրել մեզ</SectionTitle>
+          <SmallSection
+            id="about"
+            style={{
+              padding: isMobile ? "24px 14px 36px" : "40px 28px",
+            }}
+          >
+            <SectionTitle style={{ fontSize: isMobile ? "22px" : "28px" }}>
+              Ինչու ընտրել մեզ
+            </SectionTitle>
 
-            <AboutCards>
-              <Card>
+            <AboutCards
+              style={{
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "repeat(3, minmax(0, 1fr))",
+                gap: "16px",
+              }}
+            >
+              <Card
+                style={{
+                  borderRadius: "20px",
+                  border: "1px solid #fed7e2",
+                }}
+              >
                 <CardTitle>Թարմ ծաղիկներ ուղիղ ջերմոցից</CardTitle>
                 <CardText>
                   Ընտրում ենք գեղեցիկ և թարմ ծաղիկներ ուղիղ ջերմոցից ամեն պատվերի
@@ -1323,14 +1711,24 @@ ${productsText}
                 </CardText>
               </Card>
 
-              <Card>
+              <Card
+                style={{
+                  borderRadius: "20px",
+                  border: "1px solid #fed7e2",
+                }}
+              >
                 <CardTitle>Գեղեցիկ փաթեթավորում</CardTitle>
                 <CardText>
                   Յուրաքանչյուր ծաղկեփունջ և պսակ պատրաստվում է մեծ խնամքով։
                 </CardText>
               </Card>
 
-              <Card>
+              <Card
+                style={{
+                  borderRadius: "20px",
+                  border: "1px solid #fed7e2",
+                }}
+              >
                 <CardTitle>Արագ առաքում</CardTitle>
                 <CardText>
                   Առաքում Երևանում և մարզերում՝ հարմար պայմաններով։
@@ -1338,11 +1736,15 @@ ${productsText}
               </Card>
             </AboutCards>
 
-            <div style={{ textAlign: "center", marginTop: "20px" }}>
+            <div style={{ textAlign: "center", marginTop: "22px" }}>
               <Button
                 type="button"
                 $small
                 onClick={() => navigateToSection("about", null)}
+                style={{
+                  borderRadius: "999px",
+                  padding: "10px 20px",
+                }}
               >
                 Ավելին մեր մասին →
               </Button>
@@ -1351,7 +1753,13 @@ ${productsText}
         </>
       )}
 
-      <Footer id="contact">
+      <Footer
+        id="contact"
+        style={{
+          padding: isMobile ? "26px 16px 88px" : "36px 28px",
+          textAlign: "center",
+        }}
+      >
         <h2>Areg flowers</h2>
         <p>
           Ծաղիկներ, որոնք խոսում են ձեր փոխարեն՝ ծաղկեփնջեր, վարդեր, պսակներ և
@@ -1360,14 +1768,32 @@ ${productsText}
         <p>Հեռ․ +374 77 88 44 67</p>
       </Footer>
 
-      <CartButton onClick={() => setCartOpen(true)}>
+      <CartButton
+        onClick={() => setCartOpen(true)}
+        style={{
+          position: "fixed",
+          right: isMobile ? "16px" : "24px",
+          bottom: isMobile ? "16px" : "24px",
+          width: isMobile ? "56px" : "60px",
+          height: isMobile ? "56px" : "60px",
+          borderRadius: "50%",
+          boxShadow: "0 12px 26px rgba(213, 63, 140, 0.35)",
+          zIndex: 35,
+        }}
+      >
         🛒
         {cartProductsCount > 0 && <CartCount>{cartProductsCount}</CartCount>}
       </CartButton>
 
       {user && profileOpen && (
         <ModalOverlay>
-          <ModalBox>
+          <ModalBox
+            style={{
+              width: isMobile ? "94%" : "440px",
+              borderRadius: "24px",
+              padding: isMobile ? "22px 16px" : "28px",
+            }}
+          >
             <CloseButton onClick={() => setProfileOpen(false)}>×</CloseButton>
 
             <div
@@ -1384,8 +1810,8 @@ ${productsText}
                   src={userAvatar}
                   alt={userName}
                   style={{
-                    width: "60px",
-                    height: "60px",
+                    width: "62px",
+                    height: "62px",
                     borderRadius: "50%",
                     objectFit: "cover",
                   }}
@@ -1393,10 +1819,10 @@ ${productsText}
               ) : (
                 <div
                   style={{
-                    width: "58px",
-                    height: "58px",
+                    width: "60px",
+                    height: "60px",
                     borderRadius: "50%",
-                    background: "#d53f8c",
+                    background: "linear-gradient(135deg, #d53f8c 0%, #97266d 100%)",
                     color: "#fff",
                     display: "flex",
                     alignItems: "center",
@@ -1438,7 +1864,15 @@ ${productsText}
 
       {authOpen && (
         <ModalOverlay>
-          <ModalBox>
+          <ModalBox
+            style={{
+              width: isMobile ? "94%" : "440px",
+              borderRadius: "24px",
+              padding: isMobile ? "22px 16px" : "28px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
             <CloseButton
               onClick={() => {
                 setAuthOpen(false);
@@ -1457,19 +1891,20 @@ ${productsText}
               disabled={authLoading}
               style={{
                 width: "100%",
-                padding: "11px 14px",
+                padding: "12px 14px",
                 marginBottom: "14px",
-                borderRadius: "10px",
-                border: "1px solid #cbd5e0",
+                borderRadius: "14px",
+                border: "1.5px solid #e2e8f0",
                 background: "#ffffff",
                 color: "#1a202c",
-                fontWeight: 600,
+                fontWeight: 700,
                 fontSize: "14px",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 gap: "10px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
               }}
             >
               <span style={{ fontWeight: 800, color: "#d53f8c" }}>G</span>
@@ -1493,6 +1928,7 @@ ${productsText}
               <Button
                 type="button"
                 $small
+                style={{ flex: 1, borderRadius: "12px" }}
                 onClick={() => {
                   setAuthMethod("email");
                   setOtpSent(false);
@@ -1504,6 +1940,7 @@ ${productsText}
               <Button
                 type="button"
                 $small
+                style={{ flex: 1, borderRadius: "12px" }}
                 onClick={() => {
                   setAuthMethod("phone");
                   setOtpSent(false);
@@ -1518,7 +1955,7 @@ ${productsText}
               <p
                 style={{
                   color: "#e53e3e",
-                  fontSize: "14px",
+                  fontSize: "13.5px",
                   marginBottom: "10px",
                 }}
               >
@@ -1663,7 +2100,15 @@ ${productsText}
 
       {cartOpen && (
         <ModalOverlay>
-          <CartBox>
+          <CartBox
+            style={{
+              width: isMobile ? "95%" : "480px",
+              borderRadius: "24px",
+              padding: isMobile ? "20px 14px" : "26px",
+              maxHeight: "88vh",
+              overflowY: "auto",
+            }}
+          >
             <CloseButton onClick={() => setCartOpen(false)}>×</CloseButton>
 
             <CartHeader>
@@ -1740,7 +2185,15 @@ ${productsText}
 
       {orderOpen && (
         <ModalOverlay>
-          <ModalBox>
+          <ModalBox
+            style={{
+              width: isMobile ? "94%" : "440px",
+              borderRadius: "24px",
+              padding: isMobile ? "22px 16px" : "28px",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
             <CloseButton onClick={() => setOrderOpen(false)}>×</CloseButton>
             <ModalTitle>Ձևակերպել պատվերը</ModalTitle>
 
