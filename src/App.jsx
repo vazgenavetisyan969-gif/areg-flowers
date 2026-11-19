@@ -1,11 +1,11 @@
-import "./App.css"
+import "./App.css";
 import { Routes, Route } from "react-router-dom";
-import Tonacarner from "./heder/index";
+import FlowerShop from "./heder/index.jsx";
 
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Tonacarner />} />
+      <Route path="/" element={<FlowerShop />} />
     </Routes>
   );
 }

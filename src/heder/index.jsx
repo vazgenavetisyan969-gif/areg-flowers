@@ -10,10 +10,12 @@ import {
   Subtitle,
   Button,
   HeroCard,
-  TreeImg,
+  FlowerImg,
   Section,
+  SmallSection,
   SectionTitle,
   Cards,
+  AboutCards,
   Card,
   CardImg,
   CardTitle,
@@ -21,6 +23,8 @@ import {
   Price,
   Footer,
   MoreBox,
+  MoreControls,
+  MoreButton,
   ModalOverlay,
   ModalBox,
   ModalTitle,
@@ -32,100 +36,129 @@ import {
   CloseButton,
   PlusButton,
   CartBox,
+  CartHeader,
+  CartLogo,
   CartButton,
   CartCount,
   CartItems,
   CartItem,
+  CartActions,
+  RoundActionButton,
+  DeleteActionButton,
   SuccessBox,
-} from "./styled";
+} from "./styled.jsx";
 
-import treeLogo from "./img/2.png";
+const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
+const logo = "/areg-flowers-logo.png";
 
 const products = [
   {
-    id: "classic",
-    img: "https://images.unsplash.com/photo-1512389142860-9c449e58a543?w=600",
-    title: "Դասական տոնածառ",
-    text: "Փարթամ, կանաչ և շատ գեղեցիկ տարբերակ տան համար։",
-    price: "25,000 դրամ",
+    id: "astromeria",
+    img: "https://images.unsplash.com/photo-1561181286-d3fee7d55364?w=800",
+    title: "Աստրոմերիա",
+    text: "Նուրբ, գունավոր և երկար պահպանվող ծաղիկներ սիրելի մարդու համար։",
+    price: "8,000 դրամ",
   },
   {
-    id: "lux",
-    img: "https://images.unsplash.com/photo-1512909006721-3d6018887383?w=600",
-    title: "Լյուքս տոնածառ",
-    text: "Պրեմիում տեսք՝ լույսերով և խաղալիքներով։",
-    price: "45,000 դրամ",
+    id: "psakner",
+    img: "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=800",
+    title: "Պսակներ",
+    text: "Գեղեցիկ և խնամքով պատրաստված ծաղկային պսակներ տարբեր առիթների համար։",
+    price: "35,000 դրամ",
   },
   {
-    id: "small",
-    img: "https://images.unsplash.com/photo-1543589077-47d81606c1bf?w=600",
-    title: "Փոքր տոնածառ",
-    text: "Հարմար է սենյակի, գրասենյակի կամ նվերի համար։",
+    id: "caxkepnjer",
+    img: "https://images.unsplash.com/photo-1563241527-3004b7be0ffd?w=800",
+    title: "Ծաղկեփնջեր",
+    text: "Թարմ և շքեղ ծաղկեփնջեր ծննդյան, սիրո և տոնական օրերի համար։",
+    price: "12,000 դրամ",
+  },
+  {
+    id: "varder",
+    img: "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?w=800",
+    title: "Վարդեր",
+    text: "Կարմիր, սպիտակ և վարդագույն վարդեր՝ սիրո ամենագեղեցիկ նվերը։",
     price: "15,000 դրամ",
   },
 ];
 
-const classicTrees = Array.from({ length: 27 }, (_, index) => ({
-  id: `classic-${index + 1}`,
-  img: [
-    "https://images.unsplash.com/photo-1512389142860-9c449e58a543?w=600",
-    "https://images.unsplash.com/photo-1482517967863-00e15c9b44be?w=600",
-    "https://images.unsplash.com/photo-1514477917009-389c76a86b68?w=600",
-  ][index % 3],
-  title: `Դասական տոնածառ ${index + 1}`,
-  text: "Գեղեցիկ դասական տոնածառ՝ տան և սրահի համար։",
-  price: `${25 + index},000 դրամ`,
-}));
-
-const luxTrees = Array.from({ length: 27 }, (_, index) => ({
-  id: `lux-${index + 1}`,
-  img: [
-    "https://images.unsplash.com/photo-1512909006721-3d6018887383?w=600",
-    "https://images.unsplash.com/photo-1543932927-a9def13a0e7c?w=600",
-    "https://images.unsplash.com/photo-1512389142860-9c449e58a543?w=600",
-  ][index % 3],
-  title: `Լյուքս տոնածառ ${index + 1}`,
-  text: "Շքեղ լյուքս տոնածառ՝ պրեմիում տեսքով և տոնական լույսերով։",
-  price: `${45 + index},000 դրամ`,
-}));
-
-const smallTrees = Array.from({ length: 27 }, (_, index) => ({
-  id: `small-${index + 1}`,
-  img: [
-    "https://images.unsplash.com/photo-1543589077-47d81606c1bf?w=600",
-    "https://images.unsplash.com/photo-1482517967863-00e15c9b44be?w=600",
-    "https://images.unsplash.com/photo-1514477917009-389c76a86b68?w=600",
-  ][index % 3],
-  title: `Փոքր տոնածառ ${index + 1}`,
-  text: "Փոքր և կոկիկ տոնածառ՝ սենյակի, գրասենյակի կամ նվերի համար։",
-  price: `${15 + index},000 դրամ`,
-}));
-
-const moreProducts = {
-  classic: {
-    title: "Դասական տոնածառներ",
-    items: classicTrees,
+const categoryItems = {
+  astromeria: {
+    title: "Աստրոմերիա",
+    button: "Աստրոմերիա",
+    items: Array.from({ length: 12 }, (_, index) => ({
+      id: `astromeria-${index + 1}`,
+      img: [
+        "https://images.unsplash.com/photo-1561181286-d3fee7d55364?w=800",
+        "https://images.unsplash.com/photo-1490750967868-88aa4486c946?w=800",
+        "https://images.unsplash.com/photo-1525310072745-f49212b5ac6d?w=800",
+      ][index % 3],
+      title: `Աստրոմերիա ${index + 1}`,
+      text: "Թարմ աստրոմերիա՝ գեղեցիկ գույներով և նուրբ տեսքով։",
+      price: `${8 + index},000 դրամ`,
+    })),
   },
-  lux: {
-    title: "Լյուքս տոնածառներ",
-    items: luxTrees,
+
+  psakner: {
+    title: "Պսակներ",
+    button: "Պսակներ",
+    items: Array.from({ length: 12 }, (_, index) => ({
+      id: `psak-${index + 1}`,
+      img: [
+        "https://images.unsplash.com/photo-1526047932273-341f2a7631f9?w=800",
+        "https://images.unsplash.com/photo-1508610048659-a06b669e3321?w=800",
+        "https://images.unsplash.com/photo-1487070183336-b863922373d4?w=800",
+      ][index % 3],
+      title: `Ծաղկային պսակ ${index + 1}`,
+      text: "Խնամքով պատրաստված պսակ՝ գեղեցիկ և նուրբ ձևավորմամբ։",
+      price: `${35 + index * 2},000 դրամ`,
+    })),
   },
-  small: {
-    title: "Փոքր տոնածառներ",
-    items: smallTrees,
+
+  caxkepnjer: {
+    title: "Ծաղկեփնջեր",
+    button: "Ծաղկեփնջեր",
+    items: Array.from({ length: 12 }, (_, index) => ({
+      id: `bouquet-${index + 1}`,
+      img: [
+        "https://images.unsplash.com/photo-1563241527-3004b7be0ffd?w=800",
+        "https://images.unsplash.com/photo-1525310072745-f49212b5ac6d?w=800",
+        "https://images.unsplash.com/photo-1487070183336-b863922373d4?w=800",
+      ][index % 3],
+      title: `Ծաղկեփունջ ${index + 1}`,
+      text: "Թարմ ծաղիկներից պատրաստված շքեղ ծաղկեփունջ։",
+      price: `${12 + index},000 դրամ`,
+    })),
+  },
+
+  varder: {
+    title: "Վարդեր",
+    button: "Վարդեր",
+    items: Array.from({ length: 12 }, (_, index) => ({
+      id: `rose-${index + 1}`,
+      img: [
+        "https://images.unsplash.com/photo-1518895949257-7621c3c786d7?w=800",
+        "https://images.unsplash.com/photo-1496062031456-07b8f162a322?w=800",
+        "https://images.unsplash.com/photo-1518709779341-56cf4535e94b?w=800",
+      ][index % 3],
+      title: `Վարդեր ${index + 1}`,
+      text: "Գեղեցիկ վարդեր՝ սիրելի մարդուն նվիրելու համար։",
+      price: `${15 + index},000 դրամ`,
+    })),
   },
 };
 
 function getPriceNumber(price) {
-  return Number(price.replace(/,/g, "").replace(" դրամ", ""));
+  return Number(String(price).replace(/,/g, "").replace(" դրամ", ""));
 }
 
-function Tonacarner() {
+function FlowerShop() {
   const [activeCategory, setActiveCategory] = useState(null);
   const [orderOpen, setOrderOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [cart, setCart] = useState([]);
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -134,15 +167,11 @@ function Tonacarner() {
     payment: "",
   });
 
-  const handleOpen = (id) => {
-    setActiveCategory(activeCategory === id ? null : id);
-  };
-
   const addToCart = (item) => {
     setCart((prev) => {
-      const existingProduct = prev.find((cartItem) => cartItem.id === item.id);
+      const existing = prev.find((cartItem) => cartItem.id === item.id);
 
-      if (existingProduct) {
+      if (existing) {
         return prev.map((cartItem) =>
           cartItem.id === item.id
             ? { ...cartItem, quantity: cartItem.quantity + 1 }
@@ -153,7 +182,8 @@ function Tonacarner() {
       return [...prev, { ...item, quantity: 1 }];
     });
 
-    setCartOpen(true);
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 1500);
   };
 
   const minusFromCart = (id) => {
@@ -182,48 +212,85 @@ function Tonacarner() {
     e.preventDefault();
 
     if (cart.length === 0) {
-      alert("Զամբյուղը դատարկ է։ Նախ ավելացրու ապրանք։");
+      alert("Զամբյուղը դատարկ է։ Նախ ավելացրու ծաղիկ։");
       return;
     }
 
-    const orderData = {
+    if (!form.name || !form.phone || !form.address || !form.payment) {
+      alert("Լրացրեք բոլոր դաշտերը։");
+      return;
+    }
+
+    setLoading(true);
+
+    const productsText = cart
+      .map((item, index) => {
+        const itemTotal = getPriceNumber(item.price) * item.quantity;
+
+        return `
+${index + 1}. ${item.title}
+Գին: ${item.price}
+Քանակ: ${item.quantity}
+Ընդհանուր: ${itemTotal} դրամ
+-------------------------
+`;
+      })
+      .join("\n");
+
+    const orderMessage = `
+🌸 Նոր պատվեր Areg flowers կայքից
+
+Հաճախորդի տվյալներ
+Անուն: ${form.name}
+Հեռախոս: ${form.phone}
+Հասցե: ${form.address}
+
+Վճարում
+${form.payment === "cash" ? "Վճարում առաքման պահին" : "Քարտով վճարում"}
+
+Պատվերներ
+${productsText}
+
+Ընդհանուր գումար: ${totalPrice} դրամ
+`;
+
+    const formData = {
+      access_key: WEB3FORMS_ACCESS_KEY,
+      subject: "🌸 Նոր պատվեր Areg flowers կայքից",
+      from_name: "Areg flowers",
       name: form.name,
       phone: form.phone,
       address: form.address,
-      payment: form.payment,
-      products: cart,
-      totalPrice,
+      payment:
+        form.payment === "cash"
+          ? "Վճարում առաքման պահին"
+          : "Քարտով վճարում",
+      products: productsText,
+      totalPrice: `${totalPrice} դրամ`,
+      message: orderMessage,
+      botcheck: "",
     };
 
-    console.log("Ուղարկվող տվյալներ:", orderData);
-
     try {
-      const response = await fetch("http://localhost:5001/send-order", {
+      const response = await fetch("https://api.web3forms.com/submit", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "application/json",
         },
-        body: JSON.stringify(orderData),
+        body: JSON.stringify(formData),
       });
 
       const data = await response.json();
-      console.log("Server response:", data);
 
-      if (!response.ok) {
-        alert("Պատվերը չուղարկվեց: " + data.message);
+      console.log("WEB3FORMS RESPONSE:", data);
+
+      if (!data.success) {
+        alert(data.message || "Պատվերը չուղարկվեց ❌ Ստուգիր Web3Forms-ը։");
         return;
       }
 
-      if (form.payment === "card") {
-        alert(
-          "Պատվերը գրանցվեց ✅ Հիմա պետք է բացվի բանկի/Idram/Telcell-ի ապահով վճարման էջը։"
-        );
-
-        // Երբ ունենաս իրական payment link/API, սա կբացես
-        // window.location.href = data.paymentUrl;
-      } else {
-        alert("Պատվերը ուղարկվեց ✅");
-      }
+      alert("Պատվերը ուղարկվեց ✅ Ստուգիր Gmail-ը կամ Spam-ը։");
 
       setOrderOpen(false);
       setCartOpen(false);
@@ -236,13 +303,12 @@ function Tonacarner() {
       });
 
       setSuccess(true);
-
-      setTimeout(() => {
-        setSuccess(false);
-      }, 4000);
+      setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
-      console.log("Fetch error:", error);
-      alert("Չի միանում server-ին։ Ստուգիր՝ node server/server.js աշխատում է, թե չէ։");
+      console.log("WEB3FORMS FETCH ERROR:", error);
+      alert("Սխալ տեղի ունեցավ ❌ Ինտերնետը կամ Web3Forms-ը ստուգիր։");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -250,13 +316,13 @@ function Tonacarner() {
     <Page>
       <Header>
         <Logo>
-          <img src={treeLogo} alt="Tonacar.am" />
-          <span>Tonacar.am</span>
+          <img src={logo} alt="Areg flowers" />
+          <span>Areg flowers</span>
         </Logo>
 
         <Nav>
           <a href="#home">Գլխավոր</a>
-          <a href="#products">Տոնածառներ</a>
+          <a href="#products">Ծաղիկներ</a>
           <a href="#about">Մեր մասին</a>
           <a href="#contact">Կապ</a>
         </Nav>
@@ -264,22 +330,22 @@ function Tonacarner() {
 
       <Hero id="home">
         <HeroText>
-          <Title>Դեկորային գեղեցիկ տոնածառներ</Title>
+          <Title>Ծաղիկներ, որոնք խոսում են ձեր փոխարեն</Title>
           <Subtitle>
-            Ստեղծիր տոնական մթնոլորտ քո տանը՝ շքեղ, փարթամ և լուսավոր
-            տոնածառներով։
+            Areg flowers-ում կգտնես գեղեցիկ ծաղկեփնջեր, վարդեր, աստրոմերիա և
+            նուրբ ծաղկային ձևավորումներ ցանկացած առիթի համար։
           </Subtitle>
 
           <Button onClick={() => setCartOpen(true)}>Բացել զամբյուղը</Button>
         </HeroText>
 
         <HeroCard>
-          <TreeImg src={treeLogo} alt="Christmas tree" />
+          <FlowerImg src={logo} alt="Areg flowers" />
         </HeroCard>
       </Hero>
 
       <Section id="products">
-        <SectionTitle>Մեր տոնածառները</SectionTitle>
+        <SectionTitle>Մեր ծաղիկները</SectionTitle>
 
         <Cards>
           {products.map((item) => (
@@ -291,19 +357,39 @@ function Tonacarner() {
               <CardText>{item.text}</CardText>
               <Price>{item.price}</Price>
 
-              <Button onClick={() => handleOpen(item.id)} $small>
-                {activeCategory === item.id ? "Փակել" : "Տեսնել ավելին"}
+              <Button onClick={() => addToCart(item)} $small>
+                Ավելացնել զամբյուղ
               </Button>
             </Card>
           ))}
         </Cards>
 
+        <MoreControls>
+          <h3>Տեսնել բաժինները</h3>
+          <p>Ընտրիր ծաղկի տեսակը և բացիր ապրանքները</p>
+
+          <div>
+            {Object.entries(categoryItems).map(([key, category]) => (
+              <MoreButton
+                key={key}
+                type="button"
+                $active={activeCategory === key}
+                onClick={() =>
+                  setActiveCategory(activeCategory === key ? null : key)
+                }
+              >
+                {category.button}
+              </MoreButton>
+            ))}
+          </div>
+        </MoreControls>
+
         {activeCategory && (
           <MoreBox>
-            <SectionTitle>{moreProducts[activeCategory].title}</SectionTitle>
+            <SectionTitle>{categoryItems[activeCategory].title}</SectionTitle>
 
             <Cards>
-              {moreProducts[activeCategory].items.map((item) => (
+              {categoryItems[activeCategory].items.map((item) => (
                 <Card key={item.id}>
                   <PlusButton onClick={() => addToCart(item)}>+</PlusButton>
 
@@ -322,36 +408,37 @@ function Tonacarner() {
         )}
       </Section>
 
-      <Section id="about">
+      <SmallSection id="about">
         <SectionTitle>Ինչու ընտրել մեզ</SectionTitle>
 
-        <Cards>
+        <AboutCards>
           <Card>
-            <CardTitle>Բարձր որակ</CardTitle>
+            <CardTitle>Թարմ ծաղիկներ</CardTitle>
             <CardText>
-              Մեր տոնածառները շատ խիտ են, գեղեցիկ և երկար օգտագործվող։
+              Ընտրում ենք գեղեցիկ և թարմ ծաղիկներ ամեն պատվերի համար։
+            </CardText>
+          </Card>
+
+          <Card>
+            <CardTitle>Գեղեցիկ փաթեթավորում</CardTitle>
+            <CardText>
+              Յուրաքանչյուր ծաղկեփունջ պատրաստվում է խնամքով։
             </CardText>
           </Card>
 
           <Card>
             <CardTitle>Արագ առաքում</CardTitle>
-            <CardText>Առաքում Երևանում և մարզերում՝ արագ և հարմար։</CardText>
-          </Card>
-
-          <Card>
-            <CardTitle>Տոնական դիզայն</CardTitle>
             <CardText>
-              Մեր դիզայնները յուրահատուկ են և համապատասխանում են ցանկացած
-              ինտերիերի։
+              Առաքում Երևանում և մարզերում՝ հարմար պայմաններով։
             </CardText>
           </Card>
-        </Cards>
-      </Section>
+        </AboutCards>
+      </SmallSection>
 
       <Footer id="contact">
-        <h2>Tonacar.am</h2>
-        <p>Դեկորային տոնածառներ և զարդարանքներ</p>
-        <p>Հեռ․ +374 00 00 00 00</p>
+        <h2>Areg flowers</h2>
+        <p>Ծաղիկներ, որոնք խոսում են ձեր փոխարեն՝ ծաղկեփնջեր, վարդեր, պսակներ և աստրոմերիա</p>
+        <p>Հեռ․ +374 77 88 44 67</p>
       </Footer>
 
       <CartButton onClick={() => setCartOpen(true)}>
@@ -364,7 +451,15 @@ function Tonacarner() {
           <CartBox>
             <CloseButton onClick={() => setCartOpen(false)}>×</CloseButton>
 
-            <ModalTitle>Ձեր զամբյուղը</ModalTitle>
+            <CartHeader>
+              <CartLogo>
+                <img src={logo} alt="Areg flowers" />
+                <div>
+                  <span>Areg flowers</span>
+                  <small>Ձեր զամբյուղը</small>
+                </div>
+              </CartLogo>
+            </CartHeader>
 
             {cart.length === 0 ? (
               <ModalText>Զամբյուղը դատարկ է</ModalText>
@@ -385,18 +480,30 @@ function Tonacarner() {
                         </p>
                       </div>
 
-                      <div>
-                        <button onClick={() => addToCart(item)}>+</button>
-                        <button onClick={() => minusFromCart(item.id)}>−</button>
-                        <button onClick={() => deleteFromCart(item.id)}>×</button>
-                      </div>
+                      <CartActions>
+                        <RoundActionButton onClick={() => addToCart(item)}>
+                          +
+                        </RoundActionButton>
+
+                        <RoundActionButton
+                          onClick={() => minusFromCart(item.id)}
+                        >
+                          −
+                        </RoundActionButton>
+
+                        <DeleteActionButton
+                          onClick={() => deleteFromCart(item.id)}
+                        >
+                          ×
+                        </DeleteActionButton>
+                      </CartActions>
                     </CartItem>
                   ))}
                 </CartItems>
 
                 <h3
                   style={{
-                    color: "#f5d77b",
+                    color: "#b83280",
                     marginBottom: "22px",
                     textAlign: "center",
                   }}
@@ -418,7 +525,7 @@ function Tonacarner() {
           <ModalBox>
             <CloseButton onClick={() => setOrderOpen(false)}>×</CloseButton>
 
-            <ModalTitle>Պատվիրել տոնածառ</ModalTitle>
+            <ModalTitle>Պատվիրել ծաղիկներ</ModalTitle>
             <ModalText>
               Լրացրեք տվյալները, և մենք կապ կհաստատենք Ձեզ հետ։
             </ModalText>
@@ -460,20 +567,11 @@ function Tonacarner() {
                 <option value="card">Քարտով վճարում</option>
               </ModalSelect>
 
-              {form.payment === "card" && (
-                <ModalText>
-                  Քարտով վճարելու դեպքում Դուք կտեղափոխվեք բանկի կամ վճարային
-                  համակարգի ապահով էջ։ Քարտի տվյալները մեր կայքում չեն լրացվում։
-                </ModalText>
-              )}
-
               <ModalText>Պատվերի ընդհանուր գումար՝ {totalPrice} դրամ</ModalText>
 
               <ModalButtons>
-                <Button $small type="submit">
-                  {form.payment === "card"
-                    ? "Գրանցել պատվերը և անցնել վճարման"
-                    : "Ուղարկել պատվեր"}
+                <Button $small type="submit" disabled={loading}>
+                  {loading ? "Ուղարկվում է..." : "Ուղարկել պատվեր"}
                 </Button>
 
                 <Button $small type="button" onClick={() => setOrderOpen(false)}>
@@ -485,13 +583,9 @@ function Tonacarner() {
         </ModalOverlay>
       )}
 
-      {success && (
-        <SuccessBox>
-          Մեր առաքիչը հնարավորինս շուտ կմոտենա Ձեզ ✅
-        </SuccessBox>
-      )}
+      {success && <SuccessBox>Ավելացվեց զամբյուղ ✅</SuccessBox>}
     </Page>
   );
 }
 
-export default Tonacarner;
+export default FlowerShop;
