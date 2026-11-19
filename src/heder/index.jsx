@@ -166,20 +166,46 @@ function normalizePhone(rawPhone) {
   return `+${cleaned}`;
 }
 
+function getCartStorageKey(userId) {
+  return `areg_flowers_cart_${userId || "guest"}`;
+}
+
+function readCartFromStorage(userId) {
+  try {
+    const raw = localStorage.getItem(getCartStorageKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCartToStorage(userId, items) {
+  try {
+    localStorage.setItem(getCartStorageKey(userId), JSON.stringify(items));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
 function FlowerShop() {
   const [activeCategory, setActiveCategory] = useState(null);
   const [orderOpen, setOrderOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
-  const [cart, setCart] = useState([]);
+
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [cart, setCart] = useState(() => readCartFromStorage(null));
+
   const [success, setSuccess] = useState(false);
   const [successText, setSuccessText] = useState("Ավելացվեց զամբյուղ ✅");
   const [loading, setLoading] = useState(false);
 
   // Auth states
-  const [user, setUser] = useState(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMethod, setAuthMethod] = useState("email"); // "email" | "phone"
-  const [authMode, setAuthMode] = useState("login"); // "login" | "register" (for email)
+  const [authMode, setAuthMode] = useState("login"); // "login" | "register"
   const [otpSent, setOtpSent] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -204,32 +230,48 @@ function FlowerShop() {
     setTimeout(() => setSuccess(false), duration);
   };
 
+  const syncUserSession = (currentUser) => {
+    const prevKey = getCartStorageKey(user?.id);
+    const nextKey = getCartStorageKey(currentUser?.id);
+
+    // Եթե հյուրը զամբյուղում ապրանք ուներ և մտավ հաշիվ, որտեղ զամբյուղը դատարկ է՝ տեղափոխենք
+    const guestItems = readCartFromStorage(null);
+    const nextItems = readCartFromStorage(currentUser?.id);
+
+    if (currentUser && nextItems.length === 0 && guestItems.length > 0) {
+      writeCartToStorage(currentUser.id, guestItems);
+      setCart(guestItems);
+    } else if (prevKey !== nextKey || !authReady) {
+      setCart(nextItems);
+    }
+
+    setUser(currentUser);
+    setAuthReady(true);
+
+    if (currentUser) {
+      setForm((prev) => ({
+        ...prev,
+        name: prev.name || currentUser.user_metadata?.full_name || "",
+        phone:
+          prev.phone ||
+          currentUser.phone ||
+          currentUser.user_metadata?.phone ||
+          "",
+      }));
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
     supabase.auth.getSession().then(({ data }) => {
       if (!mounted) return;
-      const currentUser = data?.session?.user || null;
-      setUser(currentUser);
-      if (currentUser) {
-        setForm((prev) => ({
-          ...prev,
-          name: prev.name || currentUser.user_metadata?.full_name || "",
-          phone: prev.phone || currentUser.phone || currentUser.user_metadata?.phone || "",
-        }));
-      }
+      syncUserSession(data?.session?.user || null);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUser = session?.user || null;
-      setUser(currentUser);
-      if (currentUser) {
-        setForm((prev) => ({
-          ...prev,
-          name: prev.name || currentUser.user_metadata?.full_name || "",
-          phone: prev.phone || currentUser.phone || currentUser.user_metadata?.phone || "",
-        }));
-      }
+      if (!mounted) return;
+      syncUserSession(session?.user || null);
     });
 
     return () => {
@@ -237,6 +279,12 @@ function FlowerShop() {
       listener?.subscription?.unsubscribe();
     };
   }, []);
+
+  // Պահպանում ենք զամբյուղը localStorage-ում ամեն փոփոխության ժամանակ
+  useEffect(() => {
+    if (!authReady) return;
+    writeCartToStorage(user?.id, cart);
+  }, [cart, user?.id, authReady]);
 
   const handleEmailAuth = async (e) => {
     e.preventDefault();
@@ -299,7 +347,7 @@ function FlowerShop() {
         setAuthOpen(false);
         showToast("Մուտքը հաջողվեց ✅");
       }
-    } catch (err) {
+    } catch {
       setAuthError("Սխալ տեղի ունեցավ մուտքի/գրանցման ժամանակ։");
     } finally {
       setAuthLoading(false);
@@ -335,7 +383,7 @@ function FlowerShop() {
       setAuthForm((prev) => ({ ...prev, phone: formattedPhone }));
       setOtpSent(true);
       showToast("SMS կոդն ուղարկվեց 📩");
-    } catch (err) {
+    } catch {
       setAuthError("Չհաջողվեց ուղարկել SMS կոդը։");
     } finally {
       setAuthLoading(false);
@@ -383,7 +431,7 @@ function FlowerShop() {
       setOtpSent(false);
       setAuthForm((prev) => ({ ...prev, otp: "" }));
       showToast("Մուտքը հեռախոսահամարով հաջողվեց ✅");
-    } catch (err) {
+    } catch {
       setAuthError("Կոդի ստուգման սխալ։");
     } finally {
       setAuthLoading(false);
@@ -393,39 +441,47 @@ function FlowerShop() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    setCart(readCartFromStorage(null));
     showToast("Դուրս եկաք հաշվից");
   };
 
   const addToCart = (item) => {
     setCart((prev) => {
       const existing = prev.find((cartItem) => cartItem.id === item.id);
+      const nextCart = existing
+        ? prev.map((cartItem) =>
+            cartItem.id === item.id
+              ? { ...cartItem, quantity: cartItem.quantity + 1 }
+              : cartItem
+          )
+        : [...prev, { ...item, quantity: 1 }];
 
-      if (existing) {
-        return prev.map((cartItem) =>
-          cartItem.id === item.id
-            ? { ...cartItem, quantity: cartItem.quantity + 1 }
-            : cartItem
-        );
-      }
-
-      return [...prev, { ...item, quantity: 1 }];
+      writeCartToStorage(user?.id, nextCart);
+      return nextCart;
     });
 
     showToast("Ավելացվեց զամբյուղ ✅", 1500);
   };
 
   const minusFromCart = (id) => {
-    setCart((prev) =>
-      prev
+    setCart((prev) => {
+      const nextCart = prev
         .map((item) =>
           item.id === id ? { ...item, quantity: item.quantity - 1 } : item
         )
-        .filter((item) => item.quantity > 0)
-    );
+        .filter((item) => item.quantity > 0);
+
+      writeCartToStorage(user?.id, nextCart);
+      return nextCart;
+    });
   };
 
   const deleteFromCart = (id) => {
-    setCart((prev) => prev.filter((item) => item.id !== id));
+    setCart((prev) => {
+      const nextCart = prev.filter((item) => item.id !== id);
+      writeCartToStorage(user?.id, nextCart);
+      return nextCart;
+    });
   };
 
   const cartProductsCount = cart.reduce((count, item) => {
@@ -527,6 +583,7 @@ ${productsText}
       setOrderOpen(false);
       setCartOpen(false);
       setCart([]);
+      writeCartToStorage(user?.id, []);
       setForm({
         name: user?.user_metadata?.full_name || "",
         phone: user?.phone || user?.user_metadata?.phone || "",
