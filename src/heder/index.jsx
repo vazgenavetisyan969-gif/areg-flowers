@@ -50,17 +50,20 @@ import {
 } from "./styled.jsx";
 
 const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
+const REAL_PAYMENT_GATEWAY_URL = import.meta.env.VITE_CARD_PAYMENT_URL || "";
 const logo = "/areg-flowers-logo.png";
 
+// Յուրաքանչյուր երկրի միջազգային E.164 ստանդարտի նիշերի քանակը (առանց երկրի կոդի)
 const COUNTRIES = [
-  { code: "AM", name: "Հայաստան", flag: "🇦🇲", dial: "+374", placeholder: "77123456" },
-  { code: "RU", name: "Ռուսաստան", flag: "🇷🇺", dial: "+7", placeholder: "9161234567" },
-  { code: "US", name: "ԱՄՆ", flag: "🇺🇸", dial: "+1", placeholder: "2025550123" },
-  { code: "GE", name: "Վրաստան", flag: "🇬🇪", dial: "+995", placeholder: "555123456" },
-  { code: "FR", name: "Ֆրանսիա", flag: "🇫🇷", dial: "+33", placeholder: "612345678" },
-  { code: "DE", name: "Գերմանիա", flag: "🇩🇪", dial: "+49", placeholder: "15123456789" },
-  { code: "AE", name: "ԱՄԷ", flag: "🇦🇪", dial: "+971", placeholder: "501234567" },
-  { code: "IR", name: "Իրան", flag: "🇮🇷", dial: "+98", placeholder: "9123456789" },
+  { code: "AM", name: "Հայաստան", flag: "🇦🇲", dial: "+374", minDigits: 8, maxDigits: 8, placeholder: "77123456" },
+  { code: "RU", name: "Ռուսաստան", flag: "🇷🇺", dial: "+7", minDigits: 10, maxDigits: 10, placeholder: "9161234567" },
+  { code: "US", name: "ԱՄՆ / Կանադա", flag: "🇺🇸", dial: "+1", minDigits: 10, maxDigits: 10, placeholder: "2025550123" },
+  { code: "GE", name: "Վրաստան", flag: "🇬🇪", dial: "+995", minDigits: 9, maxDigits: 9, placeholder: "555123456" },
+  { code: "FR", name: "Ֆրանսիա", flag: "🇫🇷", dial: "+33", minDigits: 9, maxDigits: 9, placeholder: "612345678" },
+  { code: "DE", name: "Գերմանիա", flag: "🇩🇪", dial: "+49", minDigits: 10, maxDigits: 11, placeholder: "15123456789" },
+  { code: "GB", name: "Մեծ Բրիտանիա", flag: "🇬🇧", dial: "+44", minDigits: 10, maxDigits: 10, placeholder: "7911123456" },
+  { code: "AE", name: "ԱՄԷ", flag: "🇦🇪", dial: "+971", minDigits: 9, maxDigits: 9, placeholder: "501234567" },
+  { code: "IR", name: "Իրան", flag: "🇮🇷", dial: "+98", minDigits: 10, maxDigits: 10, placeholder: "9123456789" },
 ];
 
 const ABOUT_GALLERY_SLOTS = Array.from({ length: 10 }, (_, index) => ({
@@ -201,6 +204,38 @@ function formatExpiry(raw) {
   return `${digits.slice(0, 2)}/${digits.slice(2)}`;
 }
 
+// Luhn ալգորիթմ՝ բանկային քարտի համարի իրականության ստուգման համար
+function isValidLuhnCard(cardDigits) {
+  if (cardDigits.length !== 16) return false;
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = cardDigits.length - 1; i >= 0; i--) {
+    let digit = parseInt(cardDigits.charAt(i), 10);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+  return sum % 10 === 0;
+}
+
+function validatePhoneByCountry(countryCode, digits) {
+  const country =
+    COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+  const cleanDigits = String(digits || "").replace(/\D/g, "");
+
+  if (cleanDigits.length < country.minDigits || cleanDigits.length > country.maxDigits) {
+    const countText =
+      country.minDigits === country.maxDigits
+        ? `${country.maxDigits}`
+        : `${country.minDigits}-${country.maxDigits}`;
+    return `${country.name} (${country.dial}) համարը պետք է լինի խիստ ${countText} նիշ։`;
+  }
+  return "";
+}
+
 function splitPhoneWithCountry(rawPhone) {
   const cleaned = String(rawPhone || "").replace(/[^\d+]/g, "");
   if (!cleaned) {
@@ -215,17 +250,23 @@ function splitPhoneWithCountry(rawPhone) {
     if (cleaned.startsWith(country.dial)) {
       return {
         country,
-        digits: cleaned.slice(country.dial.length).replace(/\D/g, ""),
+        digits: cleaned
+          .slice(country.dial.length)
+          .replace(/\D/g, "")
+          .slice(0, country.maxDigits),
       };
     }
   }
 
   const onlyDigits = cleaned.replace(/\D/g, "");
   if (onlyDigits.startsWith("0") && onlyDigits.length === 9) {
-    return { country: COUNTRIES[0], digits: onlyDigits.slice(1) };
+    return { country: COUNTRIES[0], digits: onlyDigits.slice(1, 9) };
   }
 
-  return { country: COUNTRIES[0], digits: onlyDigits };
+  return {
+    country: COUNTRIES[0],
+    digits: onlyDigits.slice(0, COUNTRIES[0].maxDigits),
+  };
 }
 
 function PhoneInputWithFlag({
@@ -240,7 +281,10 @@ function PhoneInputWithFlag({
     COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
 
   const handleDigitsInput = (e) => {
-    const numericOnly = e.target.value.replace(/\D/g, "");
+    // Թույլատրում ենք ՄԻԱՅՆ թվեր և խիստ տվյալ երկրի առավելագույն նիշերի չափով
+    const numericOnly = e.target.value
+      .replace(/\D/g, "")
+      .slice(0, selectedCountry.maxDigits);
     onDigitsChange(numericOnly);
   };
 
@@ -285,7 +329,8 @@ function PhoneInputWithFlag({
           type="tel"
           inputMode="numeric"
           pattern="[0-9]*"
-          placeholder={selectedCountry.placeholder}
+          maxLength={selectedCountry.maxDigits}
+          placeholder={`${selectedCountry.placeholder} (${selectedCountry.maxDigits} թիվ)`}
           value={digits}
           onChange={handleDigitsInput}
           required={required}
@@ -293,7 +338,7 @@ function PhoneInputWithFlag({
             flex: 1,
             border: "none",
             outline: "none",
-            padding: "12px 14px",
+            padding: "12px 10px",
             fontSize: "15px",
             color: "#1a202c",
             width: "100%",
@@ -301,6 +346,21 @@ function PhoneInputWithFlag({
             background: "#fff",
           }}
         />
+
+        <span
+          style={{
+            paddingRight: "10px",
+            fontSize: "11px",
+            fontWeight: 700,
+            color:
+              digits.length >= selectedCountry.minDigits
+                ? "#2f855a"
+                : "#a0aec0",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {digits.length}/{selectedCountry.maxDigits}
+        </span>
       </div>
 
       {dropdownOpen && (
@@ -325,6 +385,7 @@ function PhoneInputWithFlag({
               type="button"
               onClick={() => {
                 onCountryChange(country.code);
+                onDigitsChange(digits.slice(0, country.maxDigits));
                 setDropdownOpen(false);
               }}
               style={{
@@ -350,7 +411,7 @@ function PhoneInputWithFlag({
                 <span style={{ color: "#2d3748" }}>{country.name}</span>
               </span>
               <span style={{ fontWeight: 700, color: "#d53f8c" }}>
-                {country.dial}
+                {country.dial} ({country.maxDigits} նիշ)
               </span>
             </button>
           ))}
@@ -385,7 +446,7 @@ function writeCartToStorage(userId, items) {
 
 function FlowerShop() {
   const isMobile = useIsMobile();
-  const [activePage, setActivePage] = useState("home"); // "home" կամ "about"
+  const [activePage, setActivePage] = useState("home");
   const [activeCategory, setActiveCategory] = useState(null);
   const [orderOpen, setOrderOpen] = useState(false);
   const [cardPaymentOpen, setCardPaymentOpen] = useState(false);
@@ -536,15 +597,27 @@ function FlowerShop() {
     try {
       const emailClean = authForm.email.trim();
       const nameClean = authForm.fullName.trim();
-      const fullPhone = getFullPhone(
-        authForm.countryCode,
-        authForm.phoneDigits
-      );
 
       if (!emailClean || !authForm.password) {
         setAuthError("Լրացրեք Gmail/Email-ը և գաղտնաբառը։");
         return;
       }
+
+      if (authMode === "register" && authForm.phoneDigits) {
+        const phoneErr = validatePhoneByCountry(
+          authForm.countryCode,
+          authForm.phoneDigits
+        );
+        if (phoneErr) {
+          setAuthError(phoneErr);
+          return;
+        }
+      }
+
+      const fullPhone = getFullPhone(
+        authForm.countryCode,
+        authForm.phoneDigits
+      );
 
       if (authMode === "register") {
         const { data, error } = await supabase.auth.signUp({
@@ -626,14 +699,19 @@ function FlowerShop() {
     setAuthLoading(true);
 
     try {
+      const phoneErr = validatePhoneByCountry(
+        authForm.countryCode,
+        authForm.phoneDigits
+      );
+      if (phoneErr) {
+        setAuthError(phoneErr);
+        return;
+      }
+
       const formattedPhone = getFullPhone(
         authForm.countryCode,
         authForm.phoneDigits
       );
-      if (!authForm.phoneDigits || authForm.phoneDigits.length < 6) {
-        setAuthError("Մուտքագրեք ճիշտ հեռախոսահամար (միայն թվեր)։");
-        return;
-      }
 
       const { error } = await supabase.auth.signInWithOtp({
         phone: formattedPhone,
@@ -675,7 +753,7 @@ function FlowerShop() {
         return;
       }
 
-      const { data, error } = await supabase.auth.verifyOtp({
+      const { error } = await supabase.auth.verifyOtp({
         phone: formattedPhone,
         token: tokenClean,
         type: "sms",
@@ -790,7 +868,7 @@ ${index + 1}. ${item.title}
       : "Հաշիվ: Հյուր (առանց մուտքի)";
 
     const maskedCard = cardDetails
-      ? `Քարտի տվյալներ: Քարտապան՝ ${
+      ? `Քարտային տվյալներ: Քարտապան՝ ${
           cardDetails.holderName
         }, Քարտ՝ •••• •••• •••• ${cardDetails.cardNumber
           .replace(/\D/g, "")
@@ -848,7 +926,7 @@ ${productsText}
       const data = await response.json();
 
       if (!data.success) {
-        alert(data.message || "Պատվերը չուղարկվեց ❌ Ստուգիր Web3Forms-ը։");
+        showToast(data.message || "Պատվերը չուղարկվեց ❌", 3500);
         return;
       }
 
@@ -881,7 +959,7 @@ ${productsText}
       showToast("Պատվերը հաջողությամբ ստացվեց ✅", 4000);
     } catch (error) {
       console.log("WEB3FORMS FETCH ERROR:", error);
-      alert("Սխալ տեղի ունեցավ ❌ Ինտերնետը կամ Web3Forms-ը ստուգիր։");
+      showToast("Կապի սխալ ❌ Ստուգեք ինտերնետը", 3500);
     } finally {
       setLoading(false);
     }
@@ -891,16 +969,25 @@ ${productsText}
     e.preventDefault();
 
     if (cart.length === 0) {
-      alert("Զամբյուղը դատարկ է։ Նախ ավելացրու ծաղիկ։");
+      showToast("Զամբյուղը դատարկ է", 2500);
       return;
     }
 
-    if (!form.name || !form.phoneDigits || !form.address || !form.payment) {
-      alert("Լրացրեք բոլոր դաշտերը։");
+    if (!form.name.trim() || !form.address.trim() || !form.payment) {
+      showToast("Լրացրեք բոլոր դաշտերը", 2500);
+      return;
+    }
+
+    const phoneErr = validatePhoneByCountry(form.countryCode, form.phoneDigits);
+    if (phoneErr) {
+      showToast(phoneErr, 3500);
       return;
     }
 
     if (form.payment === "card") {
+      if (REAL_PAYMENT_GATEWAY_URL) {
+        window.open(REAL_PAYMENT_GATEWAY_URL, "_blank", "noopener,noreferrer");
+      }
       setCardForm((prev) => ({
         ...prev,
         holderName: prev.holderName || form.name,
@@ -920,19 +1007,20 @@ ${productsText}
     const rawCvvDigits = cardForm.cvv.replace(/\D/g, "");
 
     if (!cardForm.holderName.trim()) {
-      alert("Լրացրեք քարտապանի անունը։");
+      showToast("Լրացրեք քարտապանի անունը", 2500);
       return;
     }
-    if (rawCardDigits.length < 16) {
-      alert("Մուտքագրեք 16-նիշանոց քարտի համարը։");
+    if (rawCardDigits.length !== 16 || !isValidLuhnCard(rawCardDigits)) {
+      showToast("Քարտի համարը սխալ է (ստուգեք 16 թվերը)", 3500);
       return;
     }
-    if (rawExpiryDigits.length < 4) {
-      alert("Մուտքագրեք վավերականության ժամկետը (MM/YY)։");
+    const expMonth = Number(rawExpiryDigits.slice(0, 2));
+    if (rawExpiryDigits.length !== 4 || expMonth < 1 || expMonth > 12) {
+      showToast("Սխալ ժամկետ (MM/YY)", 3000);
       return;
     }
-    if (rawCvvDigits.length < 3) {
-      alert("Մուտքագրեք CVV կոդը։");
+    if (rawCvvDigits.length < 3 || rawCvvDigits.length > 4) {
+      showToast("CVV կոդը պետք է լինի 3 կամ 4 թիվ", 3000);
       return;
     }
 
@@ -1377,57 +1465,6 @@ ${productsText}
                   ծաղկեփնջեր և խնամքով պատրաստված պսակներ։
                 </p>
               </div>
-            </div>
-
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #fed7e2",
-                borderRadius: isMobile ? "20px" : "24px",
-                padding: isMobile ? "18px 16px" : "28px",
-                marginBottom: "32px",
-                boxShadow: "0 10px 24px rgba(151, 38, 109, 0.05)",
-              }}
-            >
-              <h3
-                style={{
-                  color: "#97266d",
-                  fontSize: isMobile ? "18px" : "21px",
-                  marginBottom: "12px",
-                }}
-              >
-                ✨ Ինչո՞ւ են մեր ծաղիկները սիրված ու առանձնահատուկ
-              </h3>
-              <ul
-                style={{
-                  paddingLeft: "18px",
-                  lineHeight: 1.85,
-                  color: "#2d3748",
-                  fontSize: isMobile ? "14px" : "15.5px",
-                  margin: 0,
-                }}
-              >
-                <li>
-                  <strong>Ուղիղ ջերմոցից՝ առանց ավելորդ կանգառների.</strong>{" "}
-                  Ավետիսյան Գարուշի շնորհիվ ծաղիկները հասնում են թարմ, գունեղ ու
-                  կենսունակ։
-                </li>
-                <li>
-                  <strong>Անհատական ձեռքի աշխատանք.</strong> Սաթենիկ
-                  Հովսեփյանը յուրաքանչյուր ծաղկեփունջ և պսակ պատրաստում է
-                  հոգով, ներդաշնակ գույներով և ճշգրիտ համաչափությամբ։
-                </li>
-                <li>
-                  <strong>Երկար պահպանվող թարմություն.</strong> Ընտրվում են
-                  միայն որակյալ ու առողջ ծաղիկներ, որոնք երկար են մնում
-                  թարմ։
-                </li>
-                <li>
-                  <strong>Հարմար ու արագ պատվեր.</strong> Ամբողջ գործընթացը՝
-                  զամբյուղից մինչև առաքում, հարմարեցված է նաև հեռախոսով
-                  արագ օգտվելու համար։
-                </li>
-              </ul>
             </div>
 
             <SectionTitle style={{ fontSize: isMobile ? "21px" : "26px" }}>
@@ -2148,12 +2185,13 @@ ${productsText}
                 <ModalInput
                   type="text"
                   inputMode="numeric"
-                  placeholder="SMS կոդը (օրինակ՝ 123456)"
+                  maxLength={6}
+                  placeholder="SMS կոդը (6 թիվ)"
                   value={authForm.otp}
                   onChange={(e) =>
                     setAuthForm({
                       ...authForm,
-                      otp: e.target.value.replace(/\D/g, ""),
+                      otp: e.target.value.replace(/\D/g, "").slice(0, 6),
                     })
                   }
                   required
@@ -2379,7 +2417,7 @@ ${productsText}
                   letterSpacing: "1px",
                 }}
               >
-                AREG FLOWERS • BANK CARD
+                AREG FLOWERS • ARCA / VISA / MASTERCARD
               </div>
               <div
                 style={{
@@ -2417,7 +2455,8 @@ ${productsText}
               <ModalInput
                 type="text"
                 inputMode="numeric"
-                placeholder="Քարտի համարը (16 թիվ)"
+                maxLength={19}
+                placeholder="Քարտի համարը (խիստ 16 թիվ)"
                 value={cardForm.cardNumber}
                 onChange={(e) =>
                   setCardForm({
@@ -2438,6 +2477,7 @@ ${productsText}
                 <ModalInput
                   type="text"
                   inputMode="numeric"
+                  maxLength={5}
                   placeholder="Ժամկետը (MM/YY)"
                   value={cardForm.expiry}
                   onChange={(e) =>
@@ -2452,13 +2492,13 @@ ${productsText}
                 <ModalInput
                   type="password"
                   inputMode="numeric"
-                  maxLength={4}
-                  placeholder="CVV"
+                  maxLength={3}
+                  placeholder="CVV (3 թիվ)"
                   value={cardForm.cvv}
                   onChange={(e) =>
                     setCardForm({
                       ...cardForm,
-                      cvv: e.target.value.replace(/\D/g, "").slice(0, 4),
+                      cvv: e.target.value.replace(/\D/g, "").slice(0, 3),
                     })
                   }
                   required
