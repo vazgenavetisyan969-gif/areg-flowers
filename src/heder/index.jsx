@@ -53,7 +53,6 @@ const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
 const REAL_PAYMENT_GATEWAY_URL = import.meta.env.VITE_CARD_PAYMENT_URL || "";
 const logo = "/areg-flowers-logo.png";
 
-// Յուրաքանչյուր երկրի միջազգային E.164 ստանդարտի նիշերի քանակը (առանց երկրի կոդի)
 const COUNTRIES = [
   { code: "AM", name: "Հայաստան", flag: "🇦🇲", dial: "+374", minDigits: 8, maxDigits: 8, placeholder: "77123456" },
   { code: "RU", name: "Ռուսաստան", flag: "🇷🇺", dial: "+7", minDigits: 10, maxDigits: 10, placeholder: "9161234567" },
@@ -204,7 +203,6 @@ function formatExpiry(raw) {
   return `${digits.slice(0, 2)}/${digits.slice(2)}`;
 }
 
-// Luhn ալգորիթմ՝ բանկային քարտի համարի իրականության ստուգման համար
 function isValidLuhnCard(cardDigits) {
   if (cardDigits.length !== 16) return false;
   let sum = 0;
@@ -221,17 +219,23 @@ function isValidLuhnCard(cardDigits) {
   return sum % 10 === 0;
 }
 
-function validatePhoneByCountry(countryCode, digits) {
+function getEffectiveMaxDigits(country, isMobile) {
+  return isMobile ? Math.min(country.maxDigits, 8) : country.maxDigits;
+}
+
+function validatePhoneByCountry(countryCode, digits, isMobile = false) {
   const country =
     COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+  const effectiveMax = getEffectiveMaxDigits(country, isMobile);
+  const effectiveMin = Math.min(country.minDigits, effectiveMax);
   const cleanDigits = String(digits || "").replace(/\D/g, "");
 
-  if (cleanDigits.length < country.minDigits || cleanDigits.length > country.maxDigits) {
+  if (cleanDigits.length < effectiveMin || cleanDigits.length > effectiveMax) {
     const countText =
-      country.minDigits === country.maxDigits
-        ? `${country.maxDigits}`
-        : `${country.minDigits}-${country.maxDigits}`;
-    return `${country.name} (${country.dial}) համարը պետք է լինի խիստ ${countText} նիշ։`;
+      effectiveMin === effectiveMax
+        ? `${effectiveMax}`
+        : `${effectiveMin}-${effectiveMax}`;
+    return `Հեռախոսահամարը պետք է լինի խիստ ${countText} նիշ։`;
   }
   return "";
 }
@@ -274,17 +278,24 @@ function PhoneInputWithFlag({
   onCountryChange,
   digits,
   onDigitsChange,
+  isMobile = false,
   required = false,
 }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const selectedCountry =
     COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+  const maxAllowedDigits = getEffectiveMaxDigits(selectedCountry, isMobile);
+
+  useEffect(() => {
+    if (digits.length > maxAllowedDigits) {
+      onDigitsChange(digits.slice(0, maxAllowedDigits));
+    }
+  }, [maxAllowedDigits, digits, onDigitsChange]);
 
   const handleDigitsInput = (e) => {
-    // Թույլատրում ենք ՄԻԱՅՆ թվեր և խիստ տվյալ երկրի առավելագույն նիշերի չափով
     const numericOnly = e.target.value
       .replace(/\D/g, "")
-      .slice(0, selectedCountry.maxDigits);
+      .slice(0, maxAllowedDigits);
     onDigitsChange(numericOnly);
   };
 
@@ -295,10 +306,10 @@ function PhoneInputWithFlag({
           display: "flex",
           alignItems: "center",
           border: "1.5px solid #f3c6d8",
-          borderRadius: "14px",
+          borderRadius: "999px",
           background: "#fff",
           overflow: "hidden",
-          boxShadow: "0 4px 14px rgba(213, 63, 140, 0.06)",
+          boxShadow: "0 6px 18px rgba(213, 63, 140, 0.08)",
         }}
       >
         <button
@@ -308,19 +319,19 @@ function PhoneInputWithFlag({
             display: "inline-flex",
             alignItems: "center",
             gap: "6px",
-            padding: "12px 12px",
+            padding: "11px 14px",
             border: "none",
             borderRight: "1px solid #fed7e2",
             background: "linear-gradient(135deg, #fff5f7 0%, #fed7e2 100%)",
             cursor: "pointer",
-            fontSize: "14px",
+            fontSize: "13.5px",
             fontWeight: 700,
             color: "#97266d",
             whiteSpace: "nowrap",
             minHeight: "46px",
           }}
         >
-          <span style={{ fontSize: "18px" }}>{selectedCountry.flag}</span>
+          <span style={{ fontSize: "17px" }}>{selectedCountry.flag}</span>
           <span>{selectedCountry.dial}</span>
           <span style={{ fontSize: "10px", color: "#97266d" }}>▼</span>
         </button>
@@ -329,16 +340,19 @@ function PhoneInputWithFlag({
           type="tel"
           inputMode="numeric"
           pattern="[0-9]*"
-          maxLength={selectedCountry.maxDigits}
-          placeholder={`${selectedCountry.placeholder} (${selectedCountry.maxDigits} թիվ)`}
-          value={digits}
+          maxLength={maxAllowedDigits}
+          placeholder={`${selectedCountry.placeholder.slice(
+            0,
+            maxAllowedDigits
+          )} (${maxAllowedDigits} թիվ)`}
+          value={digits.slice(0, maxAllowedDigits)}
           onChange={handleDigitsInput}
           required={required}
           style={{
             flex: 1,
             border: "none",
             outline: "none",
-            padding: "12px 10px",
+            padding: "11px 10px",
             fontSize: "15px",
             color: "#1a202c",
             width: "100%",
@@ -349,17 +363,15 @@ function PhoneInputWithFlag({
 
         <span
           style={{
-            paddingRight: "10px",
+            paddingRight: "14px",
             fontSize: "11px",
             fontWeight: 700,
             color:
-              digits.length >= selectedCountry.minDigits
-                ? "#2f855a"
-                : "#a0aec0",
+              digits.length === maxAllowedDigits ? "#2f855a" : "#a0aec0",
             whiteSpace: "nowrap",
           }}
         >
-          {digits.length}/{selectedCountry.maxDigits}
+          {Math.min(digits.length, maxAllowedDigits)}/{maxAllowedDigits}
         </span>
       </div>
 
@@ -374,47 +386,51 @@ function PhoneInputWithFlag({
             overflowY: "auto",
             background: "#fff",
             border: "1px solid #fed7e2",
-            borderRadius: "14px",
+            borderRadius: "24px",
             boxShadow: "0 14px 30px rgba(151, 38, 109, 0.16)",
             zIndex: 80,
+            padding: "6px",
           }}
         >
-          {COUNTRIES.map((country) => (
-            <button
-              key={country.code}
-              type="button"
-              onClick={() => {
-                onCountryChange(country.code);
-                onDigitsChange(digits.slice(0, country.maxDigits));
-                setDropdownOpen(false);
-              }}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "11px 14px",
-                border: "none",
-                borderBottom: "1px solid #fff5f7",
-                background:
-                  country.code === selectedCountry.code ? "#fff5f7" : "#fff",
-                cursor: "pointer",
-                fontSize: "14px",
-                textAlign: "left",
-                minHeight: "44px",
-              }}
-            >
-              <span
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+          {COUNTRIES.map((country) => {
+            const countryMax = getEffectiveMaxDigits(country, isMobile);
+            return (
+              <button
+                key={country.code}
+                type="button"
+                onClick={() => {
+                  onCountryChange(country.code);
+                  onDigitsChange(digits.slice(0, countryMax));
+                  setDropdownOpen(false);
+                }}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "10px 14px",
+                  border: "none",
+                  borderRadius: "999px",
+                  background:
+                    country.code === selectedCountry.code ? "#fff5f7" : "#fff",
+                  cursor: "pointer",
+                  fontSize: "13.5px",
+                  textAlign: "left",
+                  minHeight: "42px",
+                }}
               >
-                <span style={{ fontSize: "18px" }}>{country.flag}</span>
-                <span style={{ color: "#2d3748" }}>{country.name}</span>
-              </span>
-              <span style={{ fontWeight: 700, color: "#d53f8c" }}>
-                {country.dial} ({country.maxDigits} նիշ)
-              </span>
-            </button>
-          ))}
+                <span
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  <span style={{ fontSize: "17px" }}>{country.flag}</span>
+                  <span style={{ color: "#2d3748" }}>{country.name}</span>
+                </span>
+                <span style={{ fontWeight: 700, color: "#d53f8c" }}>
+                  {country.dial} ({countryMax} նիշ)
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -491,17 +507,20 @@ function FlowerShop() {
     cvv: "",
   });
 
-  const showToast = (msg, duration = 3000) => {
+  const showToast = (msg, duration = 3500) => {
     setSuccessText(msg);
     setSuccess(true);
     setTimeout(() => setSuccess(false), duration);
   };
 
   const getFullPhone = (countryCode, digits) => {
-    const cleanDigits = String(digits || "").replace(/\D/g, "");
-    if (!cleanDigits) return "";
     const country =
       COUNTRIES.find((c) => c.code === countryCode) || COUNTRIES[0];
+    const maxAllowed = getEffectiveMaxDigits(country, isMobile);
+    const cleanDigits = String(digits || "")
+      .replace(/\D/g, "")
+      .slice(0, maxAllowed);
+    if (!cleanDigits) return "";
     return `${country.dial}${cleanDigits}`;
   };
 
@@ -606,7 +625,8 @@ function FlowerShop() {
       if (authMode === "register" && authForm.phoneDigits) {
         const phoneErr = validatePhoneByCountry(
           authForm.countryCode,
-          authForm.phoneDigits
+          authForm.phoneDigits,
+          isMobile
         );
         if (phoneErr) {
           setAuthError(phoneErr);
@@ -701,7 +721,8 @@ function FlowerShop() {
     try {
       const phoneErr = validatePhoneByCountry(
         authForm.countryCode,
-        authForm.phoneDigits
+        authForm.phoneDigits,
+        isMobile
       );
       if (phoneErr) {
         setAuthError(phoneErr);
@@ -868,11 +889,11 @@ ${index + 1}. ${item.title}
       : "Հաշիվ: Հյուր (առանց մուտքի)";
 
     const maskedCard = cardDetails
-      ? `Քարտային տվյալներ: Քարտապան՝ ${
+      ? `Քարտային վճարում փոխանցված՝ Քարտապան՝ ${
           cardDetails.holderName
         }, Քարտ՝ •••• •••• •••• ${cardDetails.cardNumber
           .replace(/\D/g, "")
-          .slice(-4)}, Ժամկետ՝ ${cardDetails.expiry}`
+          .slice(-4)}, Ժամկետ՝ ${cardDetails.expiry}, Գումար՝ ${totalPrice} դրամ`
       : "";
 
     const orderMessage = `
@@ -956,7 +977,7 @@ ${productsText}
         payment: "cash",
       });
 
-      showToast("Պատվերը հաջողությամբ ստացվեց ✅", 4000);
+      showToast("Պատվերը հաջողությամբ ստացվեց", 4000);
     } catch (error) {
       console.log("WEB3FORMS FETCH ERROR:", error);
       showToast("Կապի սխալ ❌ Ստուգեք ինտերնետը", 3500);
@@ -978,7 +999,11 @@ ${productsText}
       return;
     }
 
-    const phoneErr = validatePhoneByCountry(form.countryCode, form.phoneDigits);
+    const phoneErr = validatePhoneByCountry(
+      form.countryCode,
+      form.phoneDigits,
+      isMobile
+    );
     if (phoneErr) {
       showToast(phoneErr, 3500);
       return;
@@ -1906,7 +1931,7 @@ ${productsText}
           <ModalBox
             style={{
               width: isMobile ? "94%" : "440px",
-              borderRadius: "24px",
+              borderRadius: "28px",
               padding: isMobile ? "22px 16px" : "28px",
             }}
           >
@@ -1964,12 +1989,18 @@ ${productsText}
             </div>
 
             <ModalButtons>
-              <Button type="button" $small onClick={handleLogout}>
+              <Button
+                type="button"
+                $small
+                style={{ borderRadius: "999px" }}
+                onClick={handleLogout}
+              >
                 Դուրս գալ հաշվից
               </Button>
               <Button
                 type="button"
                 $small
+                style={{ borderRadius: "999px" }}
                 onClick={() => setProfileOpen(false)}
               >
                 Փակել
@@ -1984,7 +2015,7 @@ ${productsText}
           <ModalBox
             style={{
               width: isMobile ? "94%" : "440px",
-              borderRadius: "24px",
+              borderRadius: "28px",
               padding: isMobile ? "22px 16px" : "28px",
               maxHeight: "90vh",
               overflowY: "auto",
@@ -2010,7 +2041,7 @@ ${productsText}
                 width: "100%",
                 padding: "12px 14px",
                 marginBottom: "14px",
-                borderRadius: "14px",
+                borderRadius: "999px",
                 border: "1.5px solid #e2e8f0",
                 background: "#ffffff",
                 color: "#1a202c",
@@ -2045,7 +2076,7 @@ ${productsText}
               <Button
                 type="button"
                 $small
-                style={{ flex: 1, borderRadius: "12px" }}
+                style={{ flex: 1, borderRadius: "999px" }}
                 onClick={() => {
                   setAuthMethod("email");
                   setOtpSent(false);
@@ -2057,7 +2088,7 @@ ${productsText}
               <Button
                 type="button"
                 $small
-                style={{ flex: 1, borderRadius: "12px" }}
+                style={{ flex: 1, borderRadius: "999px" }}
                 onClick={() => {
                   setAuthMethod("phone");
                   setOtpSent(false);
@@ -2089,6 +2120,7 @@ ${productsText}
                   onChange={(e) =>
                     setAuthForm({ ...authForm, fullName: e.target.value })
                   }
+                  style={{ borderRadius: "999px", padding: "11px 16px" }}
                 />
 
                 {authMode === "register" && (
@@ -2101,6 +2133,7 @@ ${productsText}
                     onDigitsChange={(digits) =>
                       setAuthForm({ ...authForm, phoneDigits: digits })
                     }
+                    isMobile={isMobile}
                   />
                 )}
 
@@ -2112,6 +2145,7 @@ ${productsText}
                     setAuthForm({ ...authForm, email: e.target.value })
                   }
                   required
+                  style={{ borderRadius: "999px", padding: "11px 16px" }}
                 />
 
                 <ModalInput
@@ -2122,10 +2156,16 @@ ${productsText}
                     setAuthForm({ ...authForm, password: e.target.value })
                   }
                   required
+                  style={{ borderRadius: "999px", padding: "11px 16px" }}
                 />
 
                 <ModalButtons>
-                  <Button type="submit" $small disabled={authLoading}>
+                  <Button
+                    type="submit"
+                    $small
+                    disabled={authLoading}
+                    style={{ borderRadius: "999px" }}
+                  >
                     {authLoading
                       ? "Սպասեք..."
                       : authMode === "register"
@@ -2136,6 +2176,7 @@ ${productsText}
                   <Button
                     type="button"
                     $small
+                    style={{ borderRadius: "999px" }}
                     onClick={() => {
                       setAuthMode(authMode === "login" ? "register" : "login");
                       setAuthError("");
@@ -2154,6 +2195,7 @@ ${productsText}
                   onChange={(e) =>
                     setAuthForm({ ...authForm, fullName: e.target.value })
                   }
+                  style={{ borderRadius: "999px", padding: "11px 16px" }}
                 />
 
                 <PhoneInputWithFlag
@@ -2165,11 +2207,17 @@ ${productsText}
                   onDigitsChange={(digits) =>
                     setAuthForm({ ...authForm, phoneDigits: digits })
                   }
+                  isMobile={isMobile}
                   required
                 />
 
                 <ModalButtons>
-                  <Button type="submit" $small disabled={authLoading}>
+                  <Button
+                    type="submit"
+                    $small
+                    disabled={authLoading}
+                    style={{ borderRadius: "999px" }}
+                  >
                     {authLoading ? "Ուղարկվում է..." : "Ուղարկել SMS կոդ"}
                   </Button>
                 </ModalButtons>
@@ -2195,16 +2243,23 @@ ${productsText}
                     })
                   }
                   required
+                  style={{ borderRadius: "999px", padding: "11px 16px" }}
                 />
 
                 <ModalButtons>
-                  <Button type="submit" $small disabled={authLoading}>
+                  <Button
+                    type="submit"
+                    $small
+                    disabled={authLoading}
+                    style={{ borderRadius: "999px" }}
+                  >
                     {authLoading ? "Ստուգվում է..." : "Հաստատել կոդը"}
                   </Button>
 
                   <Button
                     type="button"
                     $small
+                    style={{ borderRadius: "999px" }}
                     onClick={() => setOtpSent(false)}
                   >
                     Փոխել համարը
@@ -2221,7 +2276,7 @@ ${productsText}
           <CartBox
             style={{
               width: isMobile ? "95%" : "480px",
-              borderRadius: "24px",
+              borderRadius: "28px",
               padding: isMobile ? "20px 14px" : "26px",
               maxHeight: "88vh",
               overflowY: "auto",
@@ -2280,6 +2335,7 @@ ${productsText}
                   <Button
                     type="button"
                     $small
+                    style={{ borderRadius: "999px" }}
                     onClick={() => {
                       setCartOpen(false);
                       setOrderOpen(true);
@@ -2290,6 +2346,7 @@ ${productsText}
                   <Button
                     type="button"
                     $small
+                    style={{ borderRadius: "999px" }}
                     onClick={() => setCartOpen(false)}
                   >
                     Փակել
@@ -2306,7 +2363,7 @@ ${productsText}
           <ModalBox
             style={{
               width: isMobile ? "94%" : "440px",
-              borderRadius: "24px",
+              borderRadius: "28px",
               padding: isMobile ? "22px 16px" : "28px",
               maxHeight: "90vh",
               overflowY: "auto",
@@ -2322,6 +2379,7 @@ ${productsText}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 required
+                style={{ borderRadius: "999px", padding: "11px 16px" }}
               />
 
               <PhoneInputWithFlag
@@ -2333,6 +2391,7 @@ ${productsText}
                 onDigitsChange={(digits) =>
                   setForm({ ...form, phoneDigits: digits })
                 }
+                isMobile={isMobile}
                 required
               />
 
@@ -2342,11 +2401,13 @@ ${productsText}
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
                 required
+                style={{ borderRadius: "999px", padding: "11px 16px" }}
               />
 
               <ModalSelect
                 value={form.payment}
                 onChange={(e) => setForm({ ...form, payment: e.target.value })}
+                style={{ borderRadius: "999px", padding: "11px 16px" }}
               >
                 <option value="cash">Վճարում առաքման պահին</option>
                 <option value="card">Քարտով վճարում</option>
@@ -2357,9 +2418,14 @@ ${productsText}
               </ModalText>
 
               <ModalButtons>
-                <Button type="submit" $small disabled={loading}>
+                <Button
+                  type="submit"
+                  $small
+                  disabled={loading}
+                  style={{ borderRadius: "999px" }}
+                >
                   {loading
-                    ? "Ուղարկվում է..."
+                    ? "Փոխանցվում է..."
                     : form.payment === "card"
                     ? "Անցնել քարտով վճարման"
                     : "Հաստատել պատվերը"}
@@ -2367,6 +2433,7 @@ ${productsText}
                 <Button
                   type="button"
                   $small
+                  style={{ borderRadius: "999px" }}
                   onClick={() => setOrderOpen(false)}
                 >
                   Չեղարկել
@@ -2382,7 +2449,7 @@ ${productsText}
           <ModalBox
             style={{
               width: isMobile ? "94%" : "450px",
-              borderRadius: "24px",
+              borderRadius: "32px",
               padding: isMobile ? "22px 16px" : "28px",
               maxHeight: "92vh",
               overflowY: "auto",
@@ -2392,39 +2459,49 @@ ${productsText}
             <CloseButton onClick={() => setCardPaymentOpen(false)}>×</CloseButton>
 
             <ModalTitle style={{ marginBottom: "6px" }}>
-              💳 Քարտով վճարում
+              💳 Քարտով վճարում և փոխանցում
             </ModalTitle>
             <ModalText style={{ marginBottom: "16px" }}>
               Փոխանցման գումար՝ <strong>{totalPrice} դրամ</strong>
             </ModalText>
 
+            {/* Ձվաձև / շատ կլորավուն սիրուն քարտի դիզայն */}
             <div
               style={{
                 background:
-                  "linear-gradient(135deg, #97266d 0%, #d53f8c 65%, #f687b3 100%)",
+                  "radial-gradient(circle at top left, #ff7eb3 0%, #d53f8c 52%, #701a75 100%)",
                 color: "#fff",
-                borderRadius: "18px",
-                padding: "18px",
-                marginBottom: "18px",
-                boxShadow: "0 12px 24px rgba(151, 38, 109, 0.25)",
+                borderRadius: isMobile ? "999px" : "120px",
+                width: "100%",
+                minHeight: isMobile ? "136px" : "164px",
+                padding: isMobile ? "20px 26px" : "24px 36px",
+                marginBottom: "20px",
+                boxShadow: "0 16px 32px rgba(151, 38, 109, 0.28)",
+                border: "2px solid rgba(255, 255, 255, 0.55)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center",
+                textAlign: "center",
               }}
             >
               <div
                 style={{
-                  fontSize: "11px",
-                  opacity: 0.85,
-                  marginBottom: "12px",
-                  letterSpacing: "1px",
+                  fontSize: "10.5px",
+                  opacity: 0.9,
+                  marginBottom: "6px",
+                  letterSpacing: "1.4px",
+                  fontWeight: 700,
                 }}
               >
-                AREG FLOWERS • ARCA / VISA / MASTERCARD
+                AREG FLOWERS • SMART CARD
               </div>
               <div
                 style={{
-                  fontSize: isMobile ? "17px" : "19px",
+                  fontSize: isMobile ? "15.5px" : "18.5px",
                   letterSpacing: "2px",
-                  fontWeight: 700,
-                  marginBottom: "14px",
+                  fontWeight: 800,
+                  marginBottom: "8px",
                 }}
               >
                 {cardForm.cardNumber || "•••• •••• •••• ••••"}
@@ -2432,11 +2509,14 @@ ${productsText}
               <div
                 style={{
                   display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: "12.5px",
+                  gap: "16px",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                  fontWeight: 600,
                 }}
               >
-                <span>{cardForm.holderName || "ՔԱՐՏԱՊԱՆԻ ԱՆՈՒՆ"}</span>
+                <span>{cardForm.holderName || "ՔԱՐՏԱՊԱՆ"}</span>
+                <span>•</span>
                 <span>{cardForm.expiry || "MM/YY"}</span>
               </div>
             </div>
@@ -2450,13 +2530,14 @@ ${productsText}
                   setCardForm({ ...cardForm, holderName: e.target.value })
                 }
                 required
+                style={{ borderRadius: "999px", padding: "11px 16px" }}
               />
 
               <ModalInput
                 type="text"
                 inputMode="numeric"
                 maxLength={19}
-                placeholder="Քարտի համարը (խիստ 16 թիվ)"
+                placeholder="Քարտի համարը (16 թիվ)"
                 value={cardForm.cardNumber}
                 onChange={(e) =>
                   setCardForm({
@@ -2465,6 +2546,7 @@ ${productsText}
                   })
                 }
                 required
+                style={{ borderRadius: "999px", padding: "11px 16px" }}
               />
 
               <div
@@ -2487,6 +2569,7 @@ ${productsText}
                     })
                   }
                   required
+                  style={{ borderRadius: "999px", padding: "11px 16px" }}
                 />
 
                 <ModalInput
@@ -2502,18 +2585,25 @@ ${productsText}
                     })
                   }
                   required
+                  style={{ borderRadius: "999px", padding: "11px 16px" }}
                 />
               </div>
 
               <ModalButtons>
-                <Button type="submit" $small disabled={loading}>
+                <Button
+                  type="submit"
+                  $small
+                  disabled={loading}
+                  style={{ borderRadius: "999px" }}
+                >
                   {loading
                     ? "Փոխանցվում է..."
-                    : `Վճարել ${totalPrice} դրամ`}
+                    : `Փոխանցել ${totalPrice} դրամ`}
                 </Button>
                 <Button
                   type="button"
                   $small
+                  style={{ borderRadius: "999px" }}
                   onClick={() => {
                     setCardPaymentOpen(false);
                     setOrderOpen(true);
