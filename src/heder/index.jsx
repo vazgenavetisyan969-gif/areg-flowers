@@ -66,7 +66,7 @@ const COUNTRIES = [
 const ABOUT_GALLERY_SLOTS = Array.from({ length: 10 }, (_, index) => ({
   id: index + 1,
   label: `Նկար ${index + 1}`,
-  src: "", // Հետո այստեղ կդնեք նկարի հղումը, օրինակ՝ "/images/photo1.jpg"
+  src: "",
 }));
 
 const products = [
@@ -184,6 +184,21 @@ function useIsMobile() {
 
 function getPriceNumber(price) {
   return Number(String(price).replace(/,/g, "").replace(" դրամ", ""));
+}
+
+function formatCardNumber(raw) {
+  const digits = String(raw || "")
+    .replace(/\D/g, "")
+    .slice(0, 16);
+  return digits.replace(/(\d{4})(?=\d)/g, "$1 ");
+}
+
+function formatExpiry(raw) {
+  const digits = String(raw || "")
+    .replace(/\D/g, "")
+    .slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
 }
 
 function splitPhoneWithCountry(rawPhone) {
@@ -373,6 +388,7 @@ function FlowerShop() {
   const [activePage, setActivePage] = useState("home"); // "home" կամ "about"
   const [activeCategory, setActiveCategory] = useState(null);
   const [orderOpen, setOrderOpen] = useState(false);
+  const [cardPaymentOpen, setCardPaymentOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
 
   const [user, setUser] = useState(null);
@@ -407,7 +423,14 @@ function FlowerShop() {
     payment: "cash",
   });
 
-  const showToast = (msg, duration = 2000) => {
+  const [cardForm, setCardForm] = useState({
+    holderName: "",
+    cardNumber: "",
+    expiry: "",
+    cvv: "",
+  });
+
+  const showToast = (msg, duration = 3000) => {
     setSuccessText(msg);
     setSuccess(true);
     setTimeout(() => setSuccess(false), duration);
@@ -744,22 +767,10 @@ function FlowerShop() {
     0
   );
 
-  const handleOrderSubmit = async (e) => {
-    e.preventDefault();
-
-    if (cart.length === 0) {
-      alert("Զամբյուղը դատարկ է։ Նախ ավելացրու ծաղիկ։");
-      return;
-    }
+  const finalizeOrder = async (cardDetails = null) => {
+    setLoading(true);
 
     const fullOrderPhone = getFullPhone(form.countryCode, form.phoneDigits);
-
-    if (!form.name || !form.phoneDigits || !form.address || !form.payment) {
-      alert("Լրացրեք բոլոր դաշտերը։");
-      return;
-    }
-
-    setLoading(true);
 
     const productsText = cart
       .map((item, index) => {
@@ -778,6 +789,14 @@ ${index + 1}. ${item.title}
       ? `Հաշիվ: ${user.email || user.phone || user.id}`
       : "Հաշիվ: Հյուր (առանց մուտքի)";
 
+    const maskedCard = cardDetails
+      ? `Քարտի տվյալներ: Քարտապան՝ ${
+          cardDetails.holderName
+        }, Քարտ՝ •••• •••• •••• ${cardDetails.cardNumber
+          .replace(/\D/g, "")
+          .slice(-4)}, Ժամկետ՝ ${cardDetails.expiry}`
+      : "";
+
     const orderMessage = `
 🌸 Նոր պատվեր Areg flowers կայքից
 
@@ -789,6 +808,7 @@ ${userAccountInfo}
 
 Վճարում
 ${form.payment === "cash" ? "Վճարում առաքման պահին" : "Քարտով վճարում"}
+${maskedCard}
 
 Պատվերներ
 ${productsText}
@@ -808,6 +828,7 @@ ${productsText}
         form.payment === "cash"
           ? "Վճարում առաքման պահին"
           : "Քարտով վճարում",
+      card_info: maskedCard,
       products: productsText,
       totalPrice: `${totalPrice} դրամ`,
       message: orderMessage,
@@ -831,12 +852,17 @@ ${productsText}
         return;
       }
 
-      alert("Պատվերը ուղարկվեց ✅ Ստուգիր Gmail-ը կամ Spam-ը։");
-
       setOrderOpen(false);
+      setCardPaymentOpen(false);
       setCartOpen(false);
       setCart([]);
       writeCartToStorage(user?.id, []);
+      setCardForm({
+        holderName: "",
+        cardNumber: "",
+        expiry: "",
+        cvv: "",
+      });
 
       const parsedUserPhone = splitPhoneWithCountry(
         user?.phone || user?.user_metadata?.phone || ""
@@ -852,13 +878,65 @@ ${productsText}
         payment: "cash",
       });
 
-      showToast("Պատվերը գրանցվեց ✅", 3000);
+      showToast("Պատվերը հաջողությամբ ստացվեց ✅", 4000);
     } catch (error) {
       console.log("WEB3FORMS FETCH ERROR:", error);
       alert("Սխալ տեղի ունեցավ ❌ Ինտերնետը կամ Web3Forms-ը ստուգիր։");
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOrderSubmit = async (e) => {
+    e.preventDefault();
+
+    if (cart.length === 0) {
+      alert("Զամբյուղը դատարկ է։ Նախ ավելացրու ծաղիկ։");
+      return;
+    }
+
+    if (!form.name || !form.phoneDigits || !form.address || !form.payment) {
+      alert("Լրացրեք բոլոր դաշտերը։");
+      return;
+    }
+
+    if (form.payment === "card") {
+      setCardForm((prev) => ({
+        ...prev,
+        holderName: prev.holderName || form.name,
+      }));
+      setOrderOpen(false);
+      setCardPaymentOpen(true);
+      return;
+    }
+
+    await finalizeOrder(null);
+  };
+
+  const handleCardPaymentSubmit = async (e) => {
+    e.preventDefault();
+    const rawCardDigits = cardForm.cardNumber.replace(/\D/g, "");
+    const rawExpiryDigits = cardForm.expiry.replace(/\D/g, "");
+    const rawCvvDigits = cardForm.cvv.replace(/\D/g, "");
+
+    if (!cardForm.holderName.trim()) {
+      alert("Լրացրեք քարտապանի անունը։");
+      return;
+    }
+    if (rawCardDigits.length < 16) {
+      alert("Մուտքագրեք 16-նիշանոց քարտի համարը։");
+      return;
+    }
+    if (rawExpiryDigits.length < 4) {
+      alert("Մուտքագրեք վավերականության ժամկետը (MM/YY)։");
+      return;
+    }
+    if (rawCvvDigits.length < 3) {
+      alert("Մուտքագրեք CVV կոդը։");
+      return;
+    }
+
+    await finalizeOrder(cardForm);
   };
 
   const emailUsername = user?.email ? user.email.split("@")[0] : "";
@@ -1030,7 +1108,8 @@ ${productsText}
                     width: "26px",
                     height: "26px",
                     borderRadius: "50%",
-                    background: "linear-gradient(135deg, #d53f8c 0%, #97266d 100%)",
+                    background:
+                      "linear-gradient(135deg, #d53f8c 0%, #97266d 100%)",
                     color: "#fff",
                     display: "inline-flex",
                     alignItems: "center",
@@ -1822,7 +1901,8 @@ ${productsText}
                     width: "60px",
                     height: "60px",
                     borderRadius: "50%",
-                    background: "linear-gradient(135deg, #d53f8c 0%, #97266d 100%)",
+                    background:
+                      "linear-gradient(135deg, #d53f8c 0%, #97266d 100%)",
                     color: "#fff",
                     display: "flex",
                     alignItems: "center",
@@ -2240,7 +2320,11 @@ ${productsText}
 
               <ModalButtons>
                 <Button type="submit" $small disabled={loading}>
-                  {loading ? "Ուղարկվում է..." : "Հաստատել պատվերը"}
+                  {loading
+                    ? "Ուղարկվում է..."
+                    : form.payment === "card"
+                    ? "Անցնել քարտով վճարման"
+                    : "Հաստատել պատվերը"}
                 </Button>
                 <Button
                   type="button"
@@ -2248,6 +2332,154 @@ ${productsText}
                   onClick={() => setOrderOpen(false)}
                 >
                   Չեղարկել
+                </Button>
+              </ModalButtons>
+            </ModalForm>
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
+      {cardPaymentOpen && (
+        <ModalOverlay>
+          <ModalBox
+            style={{
+              width: isMobile ? "94%" : "450px",
+              borderRadius: "24px",
+              padding: isMobile ? "22px 16px" : "28px",
+              maxHeight: "92vh",
+              overflowY: "auto",
+              background: "linear-gradient(180deg, #fff9fb 0%, #ffffff 100%)",
+            }}
+          >
+            <CloseButton onClick={() => setCardPaymentOpen(false)}>×</CloseButton>
+
+            <ModalTitle style={{ marginBottom: "6px" }}>
+              💳 Քարտով վճարում
+            </ModalTitle>
+            <ModalText style={{ marginBottom: "16px" }}>
+              Փոխանցման գումար՝ <strong>{totalPrice} դրամ</strong>
+            </ModalText>
+
+            <div
+              style={{
+                background:
+                  "linear-gradient(135deg, #97266d 0%, #d53f8c 65%, #f687b3 100%)",
+                color: "#fff",
+                borderRadius: "18px",
+                padding: "18px",
+                marginBottom: "18px",
+                boxShadow: "0 12px 24px rgba(151, 38, 109, 0.25)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  opacity: 0.85,
+                  marginBottom: "12px",
+                  letterSpacing: "1px",
+                }}
+              >
+                AREG FLOWERS • BANK CARD
+              </div>
+              <div
+                style={{
+                  fontSize: isMobile ? "17px" : "19px",
+                  letterSpacing: "2px",
+                  fontWeight: 700,
+                  marginBottom: "14px",
+                }}
+              >
+                {cardForm.cardNumber || "•••• •••• •••• ••••"}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "12.5px",
+                }}
+              >
+                <span>{cardForm.holderName || "ՔԱՐՏԱՊԱՆԻ ԱՆՈՒՆ"}</span>
+                <span>{cardForm.expiry || "MM/YY"}</span>
+              </div>
+            </div>
+
+            <ModalForm onSubmit={handleCardPaymentSubmit}>
+              <ModalInput
+                type="text"
+                placeholder="Քարտապանի անուն ազգանունը"
+                value={cardForm.holderName}
+                onChange={(e) =>
+                  setCardForm({ ...cardForm, holderName: e.target.value })
+                }
+                required
+              />
+
+              <ModalInput
+                type="text"
+                inputMode="numeric"
+                placeholder="Քարտի համարը (16 թիվ)"
+                value={cardForm.cardNumber}
+                onChange={(e) =>
+                  setCardForm({
+                    ...cardForm,
+                    cardNumber: formatCardNumber(e.target.value),
+                  })
+                }
+                required
+              />
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "10px",
+                }}
+              >
+                <ModalInput
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Ժամկետը (MM/YY)"
+                  value={cardForm.expiry}
+                  onChange={(e) =>
+                    setCardForm({
+                      ...cardForm,
+                      expiry: formatExpiry(e.target.value),
+                    })
+                  }
+                  required
+                />
+
+                <ModalInput
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="CVV"
+                  value={cardForm.cvv}
+                  onChange={(e) =>
+                    setCardForm({
+                      ...cardForm,
+                      cvv: e.target.value.replace(/\D/g, "").slice(0, 4),
+                    })
+                  }
+                  required
+                />
+              </div>
+
+              <ModalButtons>
+                <Button type="submit" $small disabled={loading}>
+                  {loading
+                    ? "Փոխանցվում է..."
+                    : `Վճարել ${totalPrice} դրամ`}
+                </Button>
+                <Button
+                  type="button"
+                  $small
+                  onClick={() => {
+                    setCardPaymentOpen(false);
+                    setOrderOpen(true);
+                  }}
+                >
+                  ← Հետ
                 </Button>
               </ModalButtons>
             </ModalForm>
