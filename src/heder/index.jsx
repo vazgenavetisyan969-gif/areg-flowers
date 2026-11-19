@@ -185,7 +185,7 @@ function writeCartToStorage(userId, items) {
   try {
     localStorage.setItem(getCartStorageKey(userId), JSON.stringify(items));
   } catch {
-    // ignore storage quota errors
+    // ignore storage errors
   }
 }
 
@@ -196,16 +196,16 @@ function FlowerShop() {
 
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [cart, setCart] = useState(() => readCartFromStorage(null));
 
   const [success, setSuccess] = useState(false);
   const [successText, setSuccessText] = useState("Ավելացվեց զամբյուղ ✅");
   const [loading, setLoading] = useState(false);
 
-  // Auth states
   const [authOpen, setAuthOpen] = useState(false);
-  const [authMethod, setAuthMethod] = useState("email"); // "email" | "phone"
-  const [authMode, setAuthMode] = useState("login"); // "login" | "register"
+  const [authMethod, setAuthMethod] = useState("email");
+  const [authMode, setAuthMode] = useState("login");
   const [otpSent, setOtpSent] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -231,17 +231,13 @@ function FlowerShop() {
   };
 
   const syncUserSession = (currentUser) => {
-    const prevKey = getCartStorageKey(user?.id);
-    const nextKey = getCartStorageKey(currentUser?.id);
-
-    // Եթե հյուրը զամբյուղում ապրանք ուներ և մտավ հաշիվ, որտեղ զամբյուղը դատարկ է՝ տեղափոխենք
     const guestItems = readCartFromStorage(null);
     const nextItems = readCartFromStorage(currentUser?.id);
 
     if (currentUser && nextItems.length === 0 && guestItems.length > 0) {
       writeCartToStorage(currentUser.id, guestItems);
       setCart(guestItems);
-    } else if (prevKey !== nextKey || !authReady) {
+    } else {
       setCart(nextItems);
     }
 
@@ -249,15 +245,21 @@ function FlowerShop() {
     setAuthReady(true);
 
     if (currentUser) {
+      const metaName =
+        currentUser.user_metadata?.full_name ||
+        currentUser.user_metadata?.name ||
+        "";
       setForm((prev) => ({
         ...prev,
-        name: prev.name || currentUser.user_metadata?.full_name || "",
+        name: prev.name || metaName,
         phone:
           prev.phone ||
           currentUser.phone ||
           currentUser.user_metadata?.phone ||
           "",
       }));
+    } else {
+      setProfileOpen(false);
     }
   };
 
@@ -280,11 +282,32 @@ function FlowerShop() {
     };
   }, []);
 
-  // Պահպանում ենք զամբյուղը localStorage-ում ամեն փոփոխության ժամանակ
   useEffect(() => {
     if (!authReady) return;
     writeCartToStorage(user?.id, cart);
   }, [cart, user?.id, authReady]);
+
+  const handleGoogleLogin = async () => {
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+
+      if (error) {
+        setAuthError(error.message);
+        setAuthLoading(false);
+      }
+    } catch {
+      setAuthError("Google-ով մուտքի սխալ տեղի ունեցավ։");
+      setAuthLoading(false);
+    }
+  };
 
   const handleEmailAuth = async (e) => {
     e.preventDefault();
@@ -293,6 +316,8 @@ function FlowerShop() {
 
     try {
       const emailClean = authForm.email.trim();
+      const nameClean = authForm.fullName.trim();
+
       if (!emailClean || !authForm.password) {
         setAuthError("Լրացրեք Gmail/Email-ը և գաղտնաբառը։");
         return;
@@ -304,7 +329,7 @@ function FlowerShop() {
           password: authForm.password,
           options: {
             data: {
-              full_name: authForm.fullName.trim(),
+              full_name: nameClean,
               phone: authForm.phone.trim(),
             },
           },
@@ -318,7 +343,7 @@ function FlowerShop() {
         if (data?.user) {
           setForm((prev) => ({
             ...prev,
-            name: authForm.fullName.trim() || prev.name,
+            name: nameClean || prev.name,
             phone: authForm.phone.trim() || prev.phone,
           }));
         }
@@ -336,13 +361,25 @@ function FlowerShop() {
           return;
         }
 
-        if (data?.user) {
-          setForm((prev) => ({
-            ...prev,
-            name: prev.name || data.user.user_metadata?.full_name || "",
-            phone: prev.phone || data.user.user_metadata?.phone || "",
-          }));
+        if (nameClean && data?.user) {
+          await supabase.auth.updateUser({
+            data: { full_name: nameClean },
+          });
         }
+
+        setForm((prev) => ({
+          ...prev,
+          name:
+            nameClean ||
+            prev.name ||
+            data?.user?.user_metadata?.full_name ||
+            "",
+          phone:
+            prev.phone ||
+            data?.user?.user_metadata?.phone ||
+            data?.user?.phone ||
+            "",
+        }));
 
         setAuthOpen(false);
         showToast("Մուտքը հաջողվեց ✅");
@@ -440,6 +477,7 @@ function FlowerShop() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    setProfileOpen(false);
     setUser(null);
     setCart(readCartFromStorage(null));
     showToast("Դուրս եկաք հաշվից");
@@ -585,7 +623,10 @@ ${productsText}
       setCart([]);
       writeCartToStorage(user?.id, []);
       setForm({
-        name: user?.user_metadata?.full_name || "",
+        name:
+          user?.user_metadata?.full_name ||
+          user?.user_metadata?.name ||
+          "",
         phone: user?.phone || user?.user_metadata?.phone || "",
         address: "",
         payment: "cash",
@@ -600,8 +641,19 @@ ${productsText}
     }
   };
 
-  const userDisplayLabel =
-    user?.user_metadata?.full_name || user?.email || user?.phone || "Հաշիվ";
+  const emailUsername = user?.email ? user.email.split("@")[0] : "";
+  const userName =
+    user?.user_metadata?.full_name ||
+    user?.user_metadata?.name ||
+    emailUsername ||
+    user?.phone ||
+    "Հաշիվ";
+  const userAvatar =
+    user?.user_metadata?.avatar_url || user?.user_metadata?.picture || "";
+  const userInitial = (userName || user?.email || "A")
+    .trim()
+    .charAt(0)
+    .toUpperCase();
 
   return (
     <Page>
@@ -618,35 +670,54 @@ ${productsText}
           <a href="#contact">Կապ</a>
 
           {user ? (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
-              <span
-                style={{
-                  fontSize: "13px",
-                  padding: "6px 10px",
-                  borderRadius: "999px",
-                  background: "#fff0f6",
-                  color: "#b83280",
-                  fontWeight: 600,
-                }}
-              >
-                {userDisplayLabel}
-              </span>
-              <button
-                type="button"
-                onClick={handleLogout}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: "999px",
-                  border: "1px solid #d53f8c",
-                  background: "transparent",
-                  color: "#d53f8c",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                }}
-              >
-                Ելք
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setProfileOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "5px 12px 5px 6px",
+                borderRadius: "999px",
+                border: "1px solid #f687b3",
+                background: "#fff5f7",
+                color: "#97266d",
+                cursor: "pointer",
+                fontSize: "13px",
+                fontWeight: 600,
+              }}
+            >
+              {userAvatar ? (
+                <img
+                  src={userAvatar}
+                  alt={userName}
+                  style={{
+                    width: "26px",
+                    height: "26px",
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <span
+                  style={{
+                    width: "26px",
+                    height: "26px",
+                    borderRadius: "50%",
+                    background: "#d53f8c",
+                    color: "#fff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                  }}
+                >
+                  {userInitial}
+                </span>
+              )}
+              <span>{userName}</span>
+            </button>
           ) : (
             <button
               type="button"
@@ -789,6 +860,73 @@ ${productsText}
         {cartProductsCount > 0 && <CartCount>{cartProductsCount}</CartCount>}
       </CartButton>
 
+      {user && profileOpen && (
+        <ModalOverlay>
+          <ModalBox>
+            <CloseButton onClick={() => setProfileOpen(false)}>×</CloseButton>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "18px",
+              }}
+            >
+              {userAvatar ? (
+                <img
+                  src={userAvatar}
+                  alt={userName}
+                  style={{
+                    width: "60px",
+                    height: "60px",
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    width: "58px",
+                    height: "58px",
+                    borderRadius: "50%",
+                    background: "#d53f8c",
+                    color: "#fff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "22px",
+                    fontWeight: 700,
+                  }}
+                >
+                  {userInitial}
+                </div>
+              )}
+
+              <ModalTitle style={{ marginBottom: 0 }}>{userName}</ModalTitle>
+              <ModalText style={{ marginBottom: 0 }}>
+                Gmail: {user.email || "Նշված չէ"}
+              </ModalText>
+              {(user.phone || user.user_metadata?.phone) && (
+                <ModalText style={{ marginBottom: 0 }}>
+                  Հեռախոս: {user.phone || user.user_metadata?.phone}
+                </ModalText>
+              )}
+            </div>
+
+            <ModalButtons>
+              <Button type="button" $small onClick={handleLogout}>
+                Դուրս գալ հաշվից
+              </Button>
+              <Button type="button" $small onClick={() => setProfileOpen(false)}>
+                Փակել
+              </Button>
+            </ModalButtons>
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
       {authOpen && (
         <ModalOverlay>
           <ModalBox>
@@ -802,13 +940,45 @@ ${productsText}
               ×
             </CloseButton>
 
-            <ModalTitle>
-              {authMethod === "email"
-                ? authMode === "register"
-                  ? "Գրանցում Gmail-ով"
-                  : "Մուտք Gmail-ով"
-                : "Մուտք / Գրանցում հեռախոսահամարով"}
-            </ModalTitle>
+            <ModalTitle>Մուտք կամ գրանցում</ModalTitle>
+
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={authLoading}
+              style={{
+                width: "100%",
+                padding: "11px 14px",
+                marginBottom: "14px",
+                borderRadius: "10px",
+                border: "1px solid #cbd5e0",
+                background: "#ffffff",
+                color: "#1a202c",
+                fontWeight: 600,
+                fontSize: "14px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "10px",
+              }}
+            >
+              <span style={{ fontWeight: 800, color: "#d53f8c" }}>G</span>
+              <span>
+                {authLoading ? "Միացում Google-ին..." : "Շարունակել Google-ով"}
+              </span>
+            </button>
+
+            <div
+              style={{
+                textAlign: "center",
+                fontSize: "12px",
+                color: "#718096",
+                marginBottom: "12px",
+              }}
+            >
+              ԿԱՄ
+            </div>
 
             <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
               <Button
@@ -843,25 +1013,24 @@ ${productsText}
 
             {authMethod === "email" ? (
               <ModalForm onSubmit={handleEmailAuth}>
+                <ModalInput
+                  type="text"
+                  placeholder="Ձեր անունը"
+                  value={authForm.fullName}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, fullName: e.target.value })
+                  }
+                />
+
                 {authMode === "register" && (
-                  <>
-                    <ModalInput
-                      type="text"
-                      placeholder="Ձեր անունը"
-                      value={authForm.fullName}
-                      onChange={(e) =>
-                        setAuthForm({ ...authForm, fullName: e.target.value })
-                      }
-                    />
-                    <ModalInput
-                      type="tel"
-                      placeholder="Հեռախոսահամար (ըստ ցանկության)"
-                      value={authForm.phone}
-                      onChange={(e) =>
-                        setAuthForm({ ...authForm, phone: e.target.value })
-                      }
-                    />
-                  </>
+                  <ModalInput
+                    type="tel"
+                    placeholder="Հեռախոսահամար (ըստ ցանկության)"
+                    value={authForm.phone}
+                    onChange={(e) =>
+                      setAuthForm({ ...authForm, phone: e.target.value })
+                    }
+                  />
                 )}
 
                 <ModalInput
