@@ -52,6 +52,8 @@ import {
 } from "./styled.jsx";
 
 const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
+const TELEGRAM_BOT_TOKEN = "9191284041:AAFaBdm6v00ZTmLxyP1bVr9A4LafHAu-te4";
+const TELEGRAM_CHAT_ID = "6583801804";
 const REAL_PAYMENT_GATEWAY_URL = import.meta.env.VITE_CARD_PAYMENT_URL || "";
 const logo = "/areg-flowers-logo.png";
 
@@ -1706,6 +1708,29 @@ ${productsText}
         return;
       }
 
+      if (
+        TELEGRAM_BOT_TOKEN &&
+        TELEGRAM_CHAT_ID &&
+        !TELEGRAM_BOT_TOKEN.startsWith("ՁԵՐ_") &&
+        !TELEGRAM_CHAT_ID.startsWith("ՁԵՐ_")
+      ) {
+        try {
+          await fetch(
+            `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: TELEGRAM_CHAT_ID,
+                text: orderMessage,
+              }),
+            }
+          );
+        } catch (tgError) {
+          console.log("TELEGRAM NOTIFICATION ERROR:", tgError);
+        }
+      }
+
       const orderedIds = new Set(itemsToOrder.map((i) => i.id));
       const remainingCart = cart.filter((item) => !orderedIds.has(item.id));
 
@@ -3342,7 +3367,6 @@ ${productsText}
                 isMobile={isMobile}
               />
 
-              {/* Բացիկի ընտրության բաժին */}
               <div
                 style={{
                   width: "100%",
