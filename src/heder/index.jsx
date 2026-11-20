@@ -52,8 +52,10 @@ import {
 } from "./styled.jsx";
 
 const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
-const TELEGRAM_BOT_TOKEN = "9191284041:AAFaBdm6v00ZTmLxyP1bVr9A4LafHAu-te4";
+const TELEGRAM_BOT_TOKEN = "ՁԵՐ_BOT_TOKEN_ԱՅՍՏԵՂ";
 const TELEGRAM_CHAT_ID = "6583801804";
+const ADMIN_OWNER_EMAIL = "vazgenavetisyan969@gmail.com";
+const ORDERS_STORAGE_KEY = "areg_flowers_orders_v1";
 const REAL_PAYMENT_GATEWAY_URL = import.meta.env.VITE_CARD_PAYMENT_URL || "";
 const logo = "/areg-flowers-logo.png";
 
@@ -175,6 +177,79 @@ const categoryItems = {
     })),
   },
 };
+
+function isAdminOwnerUser(currentUser) {
+  return (
+    String(currentUser?.email || "").trim().toLowerCase() ===
+    ADMIN_OWNER_EMAIL.toLowerCase()
+  );
+}
+
+function readStoredOrders() {
+  try {
+    const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredOrders(ordersList) {
+  try {
+    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(ordersList));
+    window.dispatchEvent(
+      new CustomEvent("areg-orders-updated", { detail: ordersList })
+    );
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function playOrderAlertSound() {
+  try {
+    const AudioCtx =
+      window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notes = [659.25, 880, 1046.5];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.14);
+      gain.gain.setValueAtTime(0.14, ctx.currentTime + idx * 0.14);
+      gain.gain.exponentialRampToValueAtTime(
+        0.001,
+        ctx.currentTime + idx * 0.14 + 0.25
+      );
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + idx * 0.14);
+      osc.stop(ctx.currentTime + idx * 0.14 + 0.26);
+    });
+  } catch {
+    // ignore audio autoplay restrictions
+  }
+}
+
+function triggerBrowserOrderNotification(orderObj) {
+  try {
+    if (
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      Notification.permission === "granted"
+    ) {
+      new Notification("🌸 Նոր պատվեր — Areg flowers", {
+        body: `${orderObj.customerName} • ${orderObj.totalAmount} դրամ • ${orderObj.address}`,
+        icon: logo,
+      });
+    }
+  } catch {
+    // ignore notification errors
+  }
+}
 
 function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   const toRad = (deg) => (deg * Math.PI) / 180;
@@ -1122,6 +1197,11 @@ function FlowerShop() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+
+  const [orders, setOrders] = useState(() => readStoredOrders());
+  const [adminOrdersOpen, setAdminOrdersOpen] = useState(false);
+  const [orderAlertBanner, setOrderAlertBanner] = useState(null);
+
   const [cart, setCart] = useState(() => readCartFromStorage(null));
   const [selectedCartIds, setSelectedCartIds] = useState(() =>
     readCartFromStorage(null).map((item) => item.id)
@@ -1165,10 +1245,91 @@ function FlowerShop() {
     cvv: "",
   });
 
+  const isOwnerLoggedIn = isAdminOwnerUser(user);
+  const unreadOrdersCount = isOwnerLoggedIn
+    ? orders.filter((o) => !o.seenByOwner).length
+    : 0;
+
   const showToast = (msg, duration = 3500) => {
     setSuccessText(msg);
     setSuccess(true);
     setTimeout(() => setSuccess(false), duration);
+  };
+
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === ORDERS_STORAGE_KEY) {
+        setOrders(readStoredOrders());
+      }
+    };
+    const handleCustomOrdersEvent = (e) => {
+      if (Array.isArray(e.detail)) {
+        setOrders(e.detail);
+      } else {
+        setOrders(readStoredOrders());
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("areg-orders-updated", handleCustomOrdersEvent);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("areg-orders-updated", handleCustomOrdersEvent);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOwnerLoggedIn) {
+      setAdminOrdersOpen(false);
+      setOrderAlertBanner(null);
+      return;
+    }
+
+    if (
+      typeof window !== "undefined" &&
+      "Notification" in window &&
+      Notification.permission === "default"
+    ) {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, [isOwnerLoggedIn]);
+
+  const markAllOrdersAsSeen = () => {
+    if (!isOwnerLoggedIn) return;
+    const updated = orders.map((ord) => ({ ...ord, seenByOwner: true }));
+    setOrders(updated);
+    writeStoredOrders(updated);
+  };
+
+  const openAdminOrdersModal = () => {
+    if (!isOwnerLoggedIn) return;
+    setProfileOpen(false);
+    setAdminOrdersOpen(true);
+    setOrderAlertBanner(null);
+    markAllOrdersAsSeen();
+  };
+
+  const toggleOrderCompletedStatus = (orderId) => {
+    if (!isOwnerLoggedIn) return;
+    const updated = orders.map((ord) =>
+      ord.id === orderId
+        ? {
+            ...ord,
+            status: ord.status === "completed" ? "new" : "completed",
+            seenByOwner: true,
+          }
+        : ord
+    );
+    setOrders(updated);
+    writeStoredOrders(updated);
+  };
+
+  const deleteOrderRecord = (orderId) => {
+    if (!isOwnerLoggedIn) return;
+    const updated = orders.filter((ord) => ord.id !== orderId);
+    setOrders(updated);
+    writeStoredOrders(updated);
+    showToast("Պատվերը ջնջվեց ցանկից 🗑️", 2000);
   };
 
   const requireRegisteredUser = (actionMessage) => {
@@ -1230,6 +1391,8 @@ function FlowerShop() {
       }));
     } else {
       setProfileOpen(false);
+      setAdminOrdersOpen(false);
+      setOrderAlertBanner(null);
     }
   };
 
@@ -1488,6 +1651,8 @@ function FlowerShop() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setProfileOpen(false);
+    setAdminOrdersOpen(false);
+    setOrderAlertBanner(null);
     setUser(null);
     const guestCart = readCartFromStorage(null);
     setCart(guestCart);
@@ -1731,6 +1896,44 @@ ${productsText}
         }
       }
 
+      const newSavedOrder = {
+        id: `ord_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        createdAt: new Date().toLocaleString("hy-AM"),
+        customerName: form.name.trim(),
+        phone: fullOrderPhone,
+        address: form.address.trim(),
+        mapUrl,
+        deliverySummary,
+        deliveryFee: currentDelivery.fee,
+        wantsCard: Boolean(form.wantsCard),
+        cardText: form.wantsCard ? form.cardText.trim() : "",
+        paymentMethod:
+          form.payment === "cash"
+            ? "Վճարում առաքման պահին"
+            : "Քարտով վճարում",
+        accountEmail: user.email || user.phone || user.id,
+        items: itemsToOrder.map((item) => ({
+          id: item.id,
+          title: item.title,
+          price: item.price,
+          quantity: item.quantity,
+        })),
+        flowersTotal: orderFlowersTotal,
+        totalAmount: finalTotal,
+        status: "new",
+        seenByOwner: false,
+      };
+
+      const updatedOrders = [newSavedOrder, ...readStoredOrders()];
+      setOrders(updatedOrders);
+      writeStoredOrders(updatedOrders);
+
+      if (isAdminOwnerUser(user)) {
+        playOrderAlertSound();
+        triggerBrowserOrderNotification(newSavedOrder);
+        setOrderAlertBanner(newSavedOrder);
+      }
+
       const orderedIds = new Set(itemsToOrder.map((i) => i.id));
       const remainingCart = cart.filter((item) => !orderedIds.has(item.id));
 
@@ -1889,6 +2092,87 @@ ${productsText}
         overflowX: "hidden",
       }}
     >
+      {isOwnerLoggedIn && orderAlertBanner && (
+        <div
+          style={{
+            position: "fixed",
+            top: isMobile ? "76px" : "80px",
+            right: isMobile ? "10px" : "24px",
+            left: isMobile ? "10px" : "auto",
+            maxWidth: "420px",
+            zIndex: 95,
+            background: "linear-gradient(135deg, #97266d 0%, #d53f8c 100%)",
+            color: "#fff",
+            borderRadius: "20px",
+            padding: "14px 16px",
+            boxShadow: "0 16px 36px rgba(151, 38, 109, 0.35)",
+            border: "1.5px solid rgba(255,255,255,0.45)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "8px",
+              marginBottom: "6px",
+            }}
+          >
+            <strong style={{ fontSize: "14px" }}>
+              🔔 Նոր պատվեր է ստացվել կայքում
+            </strong>
+            <button
+              type="button"
+              onClick={() => setOrderAlertBanner(null)}
+              style={{
+                background: "rgba(255,255,255,0.2)",
+                border: "none",
+                color: "#fff",
+                borderRadius: "999px",
+                padding: "2px 8px",
+                cursor: "pointer",
+                fontSize: "12px",
+                fontWeight: 700,
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <div style={{ fontSize: "12.5px", lineHeight: 1.5, marginBottom: "10px" }}>
+            <div>
+              <strong>Հաճախորդ՝</strong> {orderAlertBanner.customerName} (
+              {orderAlertBanner.phone})
+            </div>
+            <div>
+              <strong>Գումար՝</strong> {orderAlertBanner.totalAmount} դրամ
+            </div>
+            {orderAlertBanner.wantsCard && (
+              <div>
+                <strong>Բացիկ՝</strong> «{orderAlertBanner.cardText}»
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={openAdminOrdersModal}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "999px",
+                border: "none",
+                background: "#fff",
+                color: "#97266d",
+                fontWeight: 700,
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+            >
+              Տեսնել պատվերը
+            </button>
+          </div>
+        </div>
+      )}
+
       <Header
         style={{
           position: "sticky",
@@ -1985,6 +2269,41 @@ ${productsText}
             >
               Կապ
             </a>
+
+            {isOwnerLoggedIn && (
+              <button
+                type="button"
+                onClick={openAdminOrdersModal}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "5px 11px",
+                  borderRadius: "999px",
+                  border: "1.5px solid #d53f8c",
+                  background: "linear-gradient(135deg, #fff0f6 0%, #fed7e2 100%)",
+                  color: "#97266d",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                <span>📦 Պատվերներ ({orders.length})</span>
+                {unreadOrdersCount > 0 && (
+                  <span
+                    style={{
+                      background: "#e53e3e",
+                      color: "#fff",
+                      borderRadius: "999px",
+                      padding: "1px 6px",
+                      fontSize: "11px",
+                    }}
+                  >
+                    +{unreadOrdersCount}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
 
           {user ? (
@@ -2729,6 +3048,195 @@ ${productsText}
         {cartProductsCount > 0 && <CartCount>{cartProductsCount}</CartCount>}
       </CartButton>
 
+      {isOwnerLoggedIn && adminOrdersOpen && (
+        <ModalOverlay>
+          <ModalBox
+            style={{
+              width: isMobile ? "96%" : "680px",
+              borderRadius: "28px",
+              padding: isMobile ? "18px 14px" : "26px",
+              maxHeight: "88vh",
+              overflowY: "auto",
+              textAlign: "left",
+            }}
+          >
+            <CloseButton onClick={() => setAdminOrdersOpen(false)}>×</CloseButton>
+
+            <ModalTitle style={{ marginBottom: "4px", textAlign: "center" }}>
+              📦 Կայքի պատվերներ ({orders.length})
+            </ModalTitle>
+            <ModalText style={{ fontSize: "12.5px", marginBottom: "16px", textAlign: "center" }}>
+              Հասանելի է միայն {ADMIN_OWNER_EMAIL} հաշվին
+            </ModalText>
+
+            {orders.length === 0 ? (
+              <ModalText style={{ textAlign: "center" }}>
+                Դեռ պատվերներ չկան
+              </ModalText>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {orders.map((ord, index) => {
+                  const isCompleted = ord.status === "completed";
+                  return (
+                    <div
+                      key={ord.id}
+                      style={{
+                        borderRadius: "18px",
+                        border: isCompleted
+                          ? "1px solid #c6f6d5"
+                          : "1.5px solid #f687b3",
+                        background: isCompleted ? "#f0fff4" : "#fff9fb",
+                        padding: "14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "8px",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        <div>
+                          <strong style={{ color: "#97266d", fontSize: "14.5px" }}>
+                            Պատվեր #{orders.length - index}
+                          </strong>
+                          <span
+                            style={{
+                              marginLeft: "8px",
+                              fontSize: "11.5px",
+                              color: "#718096",
+                            }}
+                          >
+                            {ord.createdAt}
+                          </span>
+                        </div>
+
+                        <span
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: "999px",
+                            fontSize: "11.5px",
+                            fontWeight: 700,
+                            background: isCompleted ? "#c6f6d5" : "#fed7e2",
+                            color: isCompleted ? "#22543d" : "#97266d",
+                          }}
+                        >
+                          {isCompleted ? "✅ Կատարված" : "🆕 Նոր պատվեր"}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: "13px", color: "#2d3748", lineHeight: 1.6 }}>
+                        <div>
+                          <strong>Հաճախորդ՝</strong> {ord.customerName}
+                        </div>
+                        <div>
+                          <strong>Հեռախոս՝</strong> {ord.phone}
+                        </div>
+                        <div>
+                          <strong>Հասցե՝</strong> {ord.address}
+                        </div>
+                        {ord.mapUrl && ord.mapUrl.startsWith("http") && (
+                          <div>
+                            <strong>Քարտեզ՝</strong>{" "}
+                            <a
+                              href={ord.mapUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: "#d53f8c", fontWeight: 700 }}
+                            >
+                              Բացել Google Maps-ում ↗
+                            </a>
+                          </div>
+                        )}
+                        <div>
+                          <strong>Առաքում՝</strong> {ord.deliverySummary}
+                        </div>
+                        <div>
+                          <strong>Բացիկ՝</strong>{" "}
+                          {ord.wantsCard
+                            ? `Այո — «${ord.cardText}»`
+                            : "Ոչ"}
+                        </div>
+                        <div>
+                          <strong>Վճարում՝</strong> {ord.paymentMethod}
+                        </div>
+                        <div style={{ marginTop: "6px" }}>
+                          <strong>Ապրանքներ՝</strong>
+                          <ul style={{ margin: "4px 0 6px 18px", padding: 0 }}>
+                            {(ord.items || []).map((it, i) => (
+                              <li key={`${ord.id}-${it.id}-${i}`}>
+                                {it.title} — {it.price} × {it.quantity}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            fontWeight: 800,
+                            color: "#97266d",
+                            marginTop: "4px",
+                          }}
+                        >
+                          Ընդհանուր՝ {ord.totalAmount} դրամ
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "8px",
+                          marginTop: "10px",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleOrderCompletedStatus(ord.id)}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "999px",
+                            border: "none",
+                            background: isCompleted ? "#718096" : "#2f855a",
+                            color: "#fff",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {isCompleted
+                            ? "Նշել որպես նոր"
+                            : "✓ Նշել կատարված"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteOrderRecord(ord.id)}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "999px",
+                            border: "1px solid #feb2b2",
+                            background: "#fff5f5",
+                            color: "#c53030",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Ջնջել
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </ModalBox>
+        </ModalOverlay>
+      )}
+
       {user && profileOpen && (
         <ModalOverlay>
           <ModalBox
@@ -2792,6 +3300,16 @@ ${productsText}
             </div>
 
             <ModalButtons>
+              {isOwnerLoggedIn && (
+                <Button
+                  type="button"
+                  $small
+                  style={{ borderRadius: "999px" }}
+                  onClick={openAdminOrdersModal}
+                >
+                  📦 Պատվերներ ({orders.length})
+                </Button>
+              )}
               <Button
                 type="button"
                 $small
