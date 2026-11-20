@@ -1152,6 +1152,8 @@ function FlowerShop() {
     phoneDigits: "",
     address: "",
     payment: "cash",
+    wantsCard: false,
+    cardText: "",
   });
 
   const [cardForm, setCardForm] = useState({
@@ -1612,6 +1614,10 @@ function FlowerShop() {
       ? "Էջմիածնի ներսում — Անվճար (0 դրամ)"
       : `Էջմիածնից դուրս (${currentDelivery.extraKm} կմ × 300 դրամ) — ${currentDelivery.fee} դրամ`;
 
+    const greetingCardSummary = form.wantsCard
+      ? `Այո — «${form.cardText.trim()}»`
+      : "Ոչ (առանց բացիկի)";
+
     const productsText = itemsToOrder
       .map((item, index) => {
         const itemTotal = getPriceNumber(item.price) * item.quantity;
@@ -1646,6 +1652,7 @@ ${index + 1}. ${item.title}
 Հասցե: ${form.address}
 Քարտեզի կետ: ${mapUrl}
 Առաքման հաշվարկ: ${deliverySummary}
+Բացիկ: ${greetingCardSummary}
 ${userAccountInfo}
 
 Վճարում
@@ -1669,6 +1676,7 @@ ${productsText}
       address: form.address,
       map_location: mapUrl,
       delivery_fee: `${currentDelivery.fee} դրամ`,
+      greeting_card: greetingCardSummary,
       account: userAccountInfo,
       payment:
         form.payment === "cash"
@@ -1728,6 +1736,8 @@ ${productsText}
         phoneDigits: parsedUserPhone.digits,
         address: "",
         payment: "cash",
+        wantsCard: false,
+        cardText: "",
       });
 
       showToast("Պատվերը հաջողությամբ ստացվեց", 4000);
@@ -1758,6 +1768,11 @@ ${productsText}
 
     if (!form.name.trim() || !form.address.trim() || !form.payment) {
       showToast("Լրացրեք բոլոր դաշտերը", 2500);
+      return;
+    }
+
+    if (form.wantsCard && !form.cardText.trim()) {
+      showToast("Գրեք բացիկի տեքստը 💌", 2500);
       return;
     }
 
@@ -3326,6 +3341,134 @@ ${productsText}
                 }
                 isMobile={isMobile}
               />
+
+              {/* Բացիկի ընտրության բաժին */}
+              <div
+                style={{
+                  width: "100%",
+                  borderRadius: "20px",
+                  border: "1.5px solid #fbb6ce",
+                  background: "#fff9fb",
+                  padding: "12px",
+                  boxSizing: "border-box",
+                  textAlign: "left",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: isMobile ? "13.5px" : "14px",
+                      fontWeight: 700,
+                      color: "#97266d",
+                    }}
+                  >
+                    💌 Ավելացնե՞լ բացիկ ծաղկեփնջին
+                  </span>
+
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((prev) => ({ ...prev, wantsCard: true }))
+                      }
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "999px",
+                        border: form.wantsCard
+                          ? "none"
+                          : "1px solid #f687b3",
+                        background: form.wantsCard
+                          ? "linear-gradient(135deg, #e53e8d 0%, #b83280 100%)"
+                          : "#fff",
+                        color: form.wantsCard ? "#fff" : "#97266d",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Այո
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((prev) => ({
+                          ...prev,
+                          wantsCard: false,
+                          cardText: "",
+                        }))
+                      }
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "999px",
+                        border: !form.wantsCard
+                          ? "none"
+                          : "1px solid #f687b3",
+                        background: !form.wantsCard
+                          ? "linear-gradient(135deg, #e53e8d 0%, #b83280 100%)"
+                          : "#fff",
+                        color: !form.wantsCard ? "#fff" : "#97266d",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Ոչ
+                    </button>
+                  </div>
+                </div>
+
+                {form.wantsCard && (
+                  <div style={{ marginTop: "10px" }}>
+                    <textarea
+                      rows={3}
+                      maxLength={250}
+                      placeholder="Գրեք այն տեքստը, որը ցանկանում եք գրվի բացիկի մեջ..."
+                      value={form.cardText}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          cardText: e.target.value,
+                        }))
+                      }
+                      required
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        borderRadius: "14px",
+                        border: "1.5px solid #f3c6d8",
+                        padding: "10px 12px",
+                        fontSize: "14px",
+                        fontFamily: "inherit",
+                        outline: "none",
+                        resize: "vertical",
+                        background: "#fff",
+                        color: "#1a202c",
+                      }}
+                    />
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "11.5px",
+                        color: "#718096",
+                        marginTop: "4px",
+                      }}
+                    >
+                      <span>Տեքստը կկցվի ձեր պատվերին</span>
+                      <span>{form.cardText.length}/250</span>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <ModalSelect
                 value={form.payment}
