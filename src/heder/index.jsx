@@ -55,7 +55,6 @@ const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
 const REAL_PAYMENT_GATEWAY_URL = import.meta.env.VITE_CARD_PAYMENT_URL || "";
 const logo = "/areg-flowers-logo.png";
 
-// Էջմիածնի կենտրոնի կոորդինատները և անվճար գոտու շառավիղը (4 կմ)
 const EJMIATSIN_CENTER = { lat: 40.1656, lng: 44.2919 };
 const EJMIATSIN_FREE_RADIUS_KM = 4;
 const PRICE_PER_KM_AMD = 300;
@@ -226,16 +225,35 @@ function getDeliveryCalculation(coords) {
   };
 }
 
+function createPinIcon() {
+  return L.divIcon({
+    className: "custom-flower-pin",
+    html: `<div style="font-size:30px;line-height:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.35));">📍</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
+  });
+}
+
 function DeliveryLocationMap({
   selectedCoords,
   onSelectCoords,
   onAddressAutoFill,
+  addressQuery,
+  onAddressQueryChange,
   isMobile,
 }) {
-  const mapContainerRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const markerRef = useRef(null);
+  const miniMapContainerRef = useRef(null);
+  const miniMapInstanceRef = useRef(null);
+  const miniMarkerRef = useRef(null);
+
+  const bigMapContainerRef = useRef(null);
+  const bigMapInstanceRef = useRef(null);
+  const bigMarkerRef = useRef(null);
+
+  const [isExpanded, setIsExpanded] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [searchingAddress, setSearchingAddress] = useState(false);
+  const skipNextAutoSearchRef = useRef(false);
 
   const reverseGeocode = async (lat, lng) => {
     try {
@@ -249,29 +267,75 @@ function DeliveryLocationMap({
           .slice(0, 3)
           .join(",")
           .trim();
+        skipNextAutoSearchRef.current = true;
         onAddressAutoFill(shortAddr);
       }
     } catch {
-      // ignore geocode network failure
+      // ignore geocode failure
+    }
+  };
+
+  const forwardGeocodeAddress = async (rawQuery) => {
+    const query = String(rawQuery || "").trim();
+    if (query.length < 3) return;
+    setSearchingAddress(true);
+    try {
+      const searchText =
+        query.toLowerCase().includes("armenia") || query.includes("Հայաստան")
+          ? query
+          : `${query}, Armenia`;
+
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+          searchText
+        )}`
+      );
+      const results = await res.json();
+      if (Array.isArray(results) && results.length > 0) {
+        const lat = parseFloat(results[0].lat);
+        const lng = parseFloat(results[0].lon);
+        if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+          onSelectCoords({ lat, lng });
+        }
+      }
+    } catch {
+      // ignore forward geocode error
+    } finally {
+      setSearchingAddress(false);
     }
   };
 
   useEffect(() => {
-    if (!mapContainerRef.current || mapInstanceRef.current) return;
+    if (skipNextAutoSearchRef.current) {
+      skipNextAutoSearchRef.current = false;
+      return;
+    }
+    const trimmed = String(addressQuery || "").trim();
+    if (trimmed.length < 4) return;
+
+    const timer = setTimeout(() => {
+      forwardGeocodeAddress(trimmed);
+    }, 750);
+
+    return () => clearTimeout(timer);
+  }, [addressQuery]);
+
+  useEffect(() => {
+    if (!miniMapContainerRef.current || miniMapInstanceRef.current) return;
 
     const initialLat = selectedCoords?.lat || EJMIATSIN_CENTER.lat;
     const initialLng = selectedCoords?.lng || EJMIATSIN_CENTER.lng;
 
-    const map = L.map(mapContainerRef.current, {
+    const map = L.map(miniMapContainerRef.current, {
       center: [initialLat, initialLng],
-      zoom: 13,
+      zoom: selectedCoords ? 15 : 13,
+      zoomControl: false,
     });
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap",
     }).addTo(map);
 
-    // Էջմիածնի անվճար առաքման շրջանը
     L.circle([EJMIATSIN_CENTER.lat, EJMIATSIN_CENTER.lng], {
       color: "#d53f8c",
       fillColor: "#fbb6ce",
@@ -279,42 +343,117 @@ function DeliveryLocationMap({
       radius: EJMIATSIN_FREE_RADIUS_KM * 1000,
     }).addTo(map);
 
-    const pinIcon = L.divIcon({
-      className: "custom-flower-pin",
-      html: `<div style="font-size:28px;line-height:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.35));">📍</div>`,
-      iconSize: [28, 28],
-      iconAnchor: [14, 28],
-    });
-
     if (selectedCoords) {
-      markerRef.current = L.marker(
+      miniMarkerRef.current = L.marker(
         [selectedCoords.lat, selectedCoords.lng],
-        { icon: pinIcon }
+        { icon: createPinIcon() }
       ).addTo(map);
     }
 
-    map.on("click", (e) => {
-      const { lat, lng } = e.latlng;
-      if (markerRef.current) {
-        markerRef.current.setLatLng([lat, lng]);
-      } else {
-        markerRef.current = L.marker([lat, lng], { icon: pinIcon }).addTo(map);
-      }
-      onSelectCoords({ lat, lng });
-      reverseGeocode(lat, lng);
+    map.on("click", () => {
+      setIsExpanded(true);
     });
 
-    mapInstanceRef.current = map;
+    miniMapInstanceRef.current = map;
     setTimeout(() => {
       map.invalidateSize();
     }, 150);
 
     return () => {
       map.remove();
-      mapInstanceRef.current = null;
-      markerRef.current = null;
+      miniMapInstanceRef.current = null;
+      miniMarkerRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = miniMapInstanceRef.current;
+    if (!map || !selectedCoords) return;
+
+    map.setView([selectedCoords.lat, selectedCoords.lng], 15);
+    if (miniMarkerRef.current) {
+      miniMarkerRef.current.setLatLng([selectedCoords.lat, selectedCoords.lng]);
+    } else {
+      miniMarkerRef.current = L.marker(
+        [selectedCoords.lat, selectedCoords.lng],
+        { icon: createPinIcon() }
+      ).addTo(map);
+    }
+  }, [selectedCoords]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const initTimer = setTimeout(() => {
+      if (!bigMapContainerRef.current || bigMapInstanceRef.current) return;
+
+      const initialLat = selectedCoords?.lat || EJMIATSIN_CENTER.lat;
+      const initialLng = selectedCoords?.lng || EJMIATSIN_CENTER.lng;
+
+      const bigMap = L.map(bigMapContainerRef.current, {
+        center: [initialLat, initialLng],
+        zoom: selectedCoords ? 16 : 13,
+      });
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(bigMap);
+
+      L.circle([EJMIATSIN_CENTER.lat, EJMIATSIN_CENTER.lng], {
+        color: "#d53f8c",
+        fillColor: "#fbb6ce",
+        fillOpacity: 0.2,
+        radius: EJMIATSIN_FREE_RADIUS_KM * 1000,
+      }).addTo(bigMap);
+
+      if (selectedCoords) {
+        bigMarkerRef.current = L.marker(
+          [selectedCoords.lat, selectedCoords.lng],
+          { icon: createPinIcon() }
+        ).addTo(bigMap);
+      }
+
+      bigMap.on("click", (e) => {
+        const { lat, lng } = e.latlng;
+        if (bigMarkerRef.current) {
+          bigMarkerRef.current.setLatLng([lat, lng]);
+        } else {
+          bigMarkerRef.current = L.marker([lat, lng], {
+            icon: createPinIcon(),
+          }).addTo(bigMap);
+        }
+        onSelectCoords({ lat, lng });
+        reverseGeocode(lat, lng);
+      });
+
+      bigMapInstanceRef.current = bigMap;
+      bigMap.invalidateSize();
+    }, 60);
+
+    return () => {
+      clearTimeout(initTimer);
+      if (bigMapInstanceRef.current) {
+        bigMapInstanceRef.current.remove();
+        bigMapInstanceRef.current = null;
+        bigMarkerRef.current = null;
+      }
+    };
+  }, [isExpanded]);
+
+  useEffect(() => {
+    const bigMap = bigMapInstanceRef.current;
+    if (!isExpanded || !bigMap || !selectedCoords) return;
+
+    bigMap.setView([selectedCoords.lat, selectedCoords.lng], 16);
+    if (bigMarkerRef.current) {
+      bigMarkerRef.current.setLatLng([selectedCoords.lat, selectedCoords.lng]);
+    } else {
+      bigMarkerRef.current = L.marker(
+        [selectedCoords.lat, selectedCoords.lng],
+        { icon: createPinIcon() }
+      ).addTo(bigMap);
+    }
+  }, [selectedCoords, isExpanded]);
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) return;
@@ -325,23 +464,6 @@ function DeliveryLocationMap({
         const lng = pos.coords.longitude;
         onSelectCoords({ lat, lng });
         reverseGeocode(lat, lng);
-
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.setView([lat, lng], 15);
-          const pinIcon = L.divIcon({
-            className: "custom-flower-pin",
-            html: `<div style="font-size:28px;line-height:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.35));">📍</div>`,
-            iconSize: [28, 28],
-            iconAnchor: [14, 28],
-          });
-          if (markerRef.current) {
-            markerRef.current.setLatLng([lat, lng]);
-          } else {
-            markerRef.current = L.marker([lat, lng], { icon: pinIcon }).addTo(
-              mapInstanceRef.current
-            );
-          }
-        }
         setLocating(false);
       },
       () => {
@@ -367,22 +489,75 @@ function DeliveryLocationMap({
       <div
         style={{
           display: "flex",
+          gap: "6px",
+          marginBottom: "8px",
+          width: "100%",
+        }}
+      >
+        <input
+          type="text"
+          placeholder="Գրեք հասցեն (օր․ Էջմիածին, Մաշտոցի 15)..."
+          value={addressQuery}
+          onChange={(e) => onAddressQueryChange(e.target.value)}
+          required
+          style={{
+            flex: 1,
+            minWidth: 0,
+            border: "1.5px solid #f3c6d8",
+            borderRadius: "999px",
+            padding: "10px 14px",
+            fontSize: "14px",
+            outline: "none",
+            background: "#fff",
+            color: "#1a202c",
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => forwardGeocodeAddress(addressQuery)}
+          disabled={searchingAddress}
+          style={{
+            padding: "0 13px",
+            borderRadius: "999px",
+            border: "none",
+            background: "linear-gradient(135deg, #e53e8d 0%, #b83280 100%)",
+            color: "#fff",
+            fontSize: "12px",
+            fontWeight: 700,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {searchingAddress ? "..." : "🔍 Գտնել"}
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: "8px",
+          gap: "6px",
           marginBottom: "8px",
           flexWrap: "wrap",
         }}
       >
-        <span
+        <button
+          type="button"
+          onClick={() => setIsExpanded(true)}
           style={{
-            fontSize: isMobile ? "12px" : "13px",
-            fontWeight: 700,
+            padding: "5px 10px",
+            borderRadius: "999px",
+            border: "1px solid #f687b3",
+            background: "#fff0f6",
             color: "#97266d",
+            fontSize: "11.5px",
+            fontWeight: 700,
+            cursor: "pointer",
           }}
         >
-          🗺️ Նշեք ձեր տան տեղը քարտեզի վրա
-        </span>
+          ⛶ Մեծացնել քարտեզը
+        </button>
 
         <button
           type="button"
@@ -404,31 +579,55 @@ function DeliveryLocationMap({
       </div>
 
       <div
-        ref={mapContainerRef}
+        onClick={() => setIsExpanded(true)}
+        title="Սեղմեք քարտեզը մեծացնելու համար"
         style={{
+          position: "relative",
           width: "100%",
-          height: isMobile ? "185px" : "215px",
+          height: isMobile ? "155px" : "180px",
           borderRadius: "14px",
           overflow: "hidden",
-          zIndex: 1,
+          cursor: "pointer",
+          border: "1px solid #fed7e2",
         }}
-      />
+      >
+        <div
+          ref={miniMapContainerRef}
+          style={{
+            width: "100%",
+            height: "100%",
+            zIndex: 1,
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            bottom: "8px",
+            right: "8px",
+            zIndex: 10,
+            background: "rgba(151, 38, 109, 0.88)",
+            color: "#fff",
+            fontSize: "11px",
+            fontWeight: 700,
+            padding: "4px 10px",
+            borderRadius: "999px",
+            pointerEvents: "none",
+          }}
+        >
+          Սեղմեք մեծացնելու համար ↗
+        </div>
+      </div>
 
       <div
         style={{
           marginTop: "8px",
           fontSize: isMobile ? "12px" : "12.5px",
           color: "#2d3748",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "4px",
         }}
       >
         {!deliveryInfo.selected ? (
           <span style={{ color: "#b83280", fontWeight: 600 }}>
-            Սեղմեք քարտեզի վրա՝ առաքման գումարը հաշվելու համար
+            Գրեք հասցեն կամ սեղմեք քարտեզի վրա՝ տեղը նշելու համար
           </span>
         ) : deliveryInfo.isEjmiatsin ? (
           <span style={{ color: "#2f855a", fontWeight: 700 }}>
@@ -441,6 +640,179 @@ function DeliveryLocationMap({
           </span>
         )}
       </div>
+
+      {isExpanded && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(26, 32, 44, 0.78)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            flexDirection: "column",
+            padding: isMobile ? "10px" : "24px",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "24px",
+              width: "100%",
+              height: "100%",
+              maxWidth: "960px",
+              margin: "0 auto",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.35)",
+            }}
+          >
+            <div
+              style={{
+                padding: isMobile ? "12px" : "16px 20px",
+                background: "#fff5f7",
+                borderBottom: "1px solid #fed7e2",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <strong style={{ color: "#97266d", fontSize: "15px" }}>
+                  🗺️ Նշեք տան ճշգրիտ տեղը քարտեզի վրա
+                </strong>
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded(false)}
+                  style={{
+                    padding: "7px 14px",
+                    borderRadius: "999px",
+                    border: "none",
+                    background:
+                      "linear-gradient(135deg, #2f855a 0%, #276749 100%)",
+                    color: "#fff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  ✓ Հաստատել տեղը
+                </button>
+              </div>
+
+              <div style={{ display: "flex", gap: "6px" }}>
+                <input
+                  type="text"
+                  placeholder="Որոնել հասցեն քարտեզի վրա..."
+                  value={addressQuery}
+                  onChange={(e) => onAddressQueryChange(e.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    border: "1.5px solid #f3c6d8",
+                    borderRadius: "999px",
+                    padding: "9px 14px",
+                    fontSize: "14px",
+                    outline: "none",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => forwardGeocodeAddress(addressQuery)}
+                  disabled={searchingAddress}
+                  style={{
+                    padding: "0 14px",
+                    borderRadius: "999px",
+                    border: "none",
+                    background: "#d53f8c",
+                    color: "#fff",
+                    fontSize: "12.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {searchingAddress ? "..." : "Գտնել"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUseMyLocation}
+                  disabled={locating}
+                  style={{
+                    padding: "0 12px",
+                    borderRadius: "999px",
+                    border: "1px solid #f687b3",
+                    background: "#fff",
+                    color: "#97266d",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  📍 Իմ տեղը
+                </button>
+              </div>
+            </div>
+
+            <div
+              ref={bigMapContainerRef}
+              style={{
+                flex: 1,
+                width: "100%",
+                minHeight: "300px",
+              }}
+            />
+
+            <div
+              style={{
+                padding: "12px 16px",
+                background: "#fff",
+                borderTop: "1px solid #fed7e2",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "8px",
+                fontSize: "13px",
+              }}
+            >
+              <span>
+                {!deliveryInfo.selected
+                  ? "Սեղմեք քարտեզի ցանկացած կետի վրա"
+                  : deliveryInfo.isEjmiatsin
+                  ? "✅ Էջմիածնի ներսում՝ Առաքումը ԱՆՎՃԱՐ (0 դրամ)"
+                  : `🚚 Էջմիածնից դուրս (${deliveryInfo.extraKm} կմ × 300 դրամ) = ${deliveryInfo.fee} դրամ`}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setIsExpanded(false)}
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: "999px",
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #e53e8d 0%, #b83280 100%)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Պատրաստ է
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1380,7 +1752,7 @@ ${productsText}
     }
 
     if (!deliveryCoords) {
-      showToast("Նշեք ձեր տան տեղը քարտեզի վրա 🗺️", 3000);
+      showToast("Գրեք հասցեն կամ նշեք ձեր տան տեղը քարտեզի վրա 🗺️", 3000);
       return;
     }
 
@@ -2288,7 +2660,7 @@ ${productsText}
       <Footer
         id="contact"
         style={{
-          padding: isMobile ? "26px 16px 110px" : "36px 28px",
+          padding: isMobile ? "26px 16px 135px" : "36px 28px",
           textAlign: "center",
         }}
       >
@@ -2300,18 +2672,17 @@ ${productsText}
         <p>Հեռ․ +374 77 88 44 67</p>
       </Footer>
 
-      {/* Զամբյուղի կոճակը մի փոքր վերև բարձրացված */}
       <CartButton
         onClick={() => setCartOpen(true)}
         style={{
           position: "fixed",
           right: isMobile ? "16px" : "24px",
-          bottom: isMobile ? "72px" : "84px",
-          width: isMobile ? "56px" : "60px",
-          height: isMobile ? "56px" : "60px",
+          bottom: isMobile ? "105px" : "92px",
+          width: isMobile ? "58px" : "60px",
+          height: isMobile ? "58px" : "60px",
           borderRadius: "50%",
-          boxShadow: "0 12px 26px rgba(213, 63, 140, 0.35)",
-          zIndex: 35,
+          boxShadow: "0 12px 26px rgba(213, 63, 140, 0.38)",
+          zIndex: 45,
         }}
       >
         🛒
@@ -2673,7 +3044,8 @@ ${productsText}
               width: isMobile ? "95%" : "520px",
               borderRadius: "28px",
               padding: isMobile ? "18px 14px" : "26px",
-              maxHeight: "88vh",
+              maxHeight: isMobile ? "82vh" : "88vh",
+              marginBottom: isMobile ? "48px" : "0",
               overflowY: "auto",
             }}
           >
@@ -2910,8 +3282,9 @@ ${productsText}
             style={{
               width: isMobile ? "95%" : "490px",
               borderRadius: "28px",
-              padding: isMobile ? "20px 14px" : "26px",
-              maxHeight: "92vh",
+              padding: isMobile ? "18px 14px" : "26px",
+              maxHeight: isMobile ? "84vh" : "92vh",
+              marginBottom: isMobile ? "44px" : "0",
               overflowY: "auto",
             }}
           >
@@ -2945,20 +3318,13 @@ ${productsText}
                 selectedCoords={deliveryCoords}
                 onSelectCoords={(coords) => setDeliveryCoords(coords)}
                 onAddressAutoFill={(autoAddr) =>
-                  setForm((prev) =>
-                    prev.address.trim() ? prev : { ...prev, address: autoAddr }
-                  )
+                  setForm((prev) => ({ ...prev, address: autoAddr }))
+                }
+                addressQuery={form.address}
+                onAddressQueryChange={(newAddress) =>
+                  setForm((prev) => ({ ...prev, address: newAddress }))
                 }
                 isMobile={isMobile}
-              />
-
-              <ModalInput
-                type="text"
-                placeholder="Առաքման հասցեն (քաղաք/գյուղ, փողոց, տուն)"
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-                required
-                style={{ borderRadius: "999px", padding: "11px 16px" }}
               />
 
               <ModalSelect
