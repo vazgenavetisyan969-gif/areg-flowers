@@ -55,7 +55,6 @@ const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
 const TELEGRAM_BOT_TOKEN = "ՁԵՐ_BOT_TOKEN_ԱՅՍՏԵՂ";
 const TELEGRAM_CHAT_ID = "6583801804";
 const ADMIN_OWNER_EMAIL = "vazgenavetisyan969@gmail.com";
-const ORDERS_STORAGE_KEY = "areg_flowers_orders_v1";
 const REAL_PAYMENT_GATEWAY_URL = import.meta.env.VITE_CARD_PAYMENT_URL || "";
 const logo = "/areg-flowers-logo.png";
 
@@ -185,32 +184,33 @@ function isAdminOwnerUser(currentUser) {
   );
 }
 
-function readStoredOrders() {
-  try {
-    const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeStoredOrders(ordersList) {
-  try {
-    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(ordersList));
-    window.dispatchEvent(
-      new CustomEvent("areg-orders-updated", { detail: ordersList })
-    );
-  } catch {
-    // ignore storage errors
-  }
+function mapDbRowToOrder(row) {
+  return {
+    id: row.id,
+    createdAt: row.created_at
+      ? new Date(row.created_at).toLocaleString("hy-AM")
+      : new Date().toLocaleString("hy-AM"),
+    customerName: row.customer_name || "",
+    phone: row.phone || "",
+    address: row.address || "",
+    mapUrl: row.map_url || "",
+    deliverySummary: row.delivery_summary || "",
+    deliveryFee: Number(row.delivery_fee || 0),
+    wantsCard: Boolean(row.wants_card),
+    cardText: row.card_text || "",
+    paymentMethod: row.payment_method || "",
+    accountEmail: row.account_email || "",
+    items: Array.isArray(row.items) ? row.items : [],
+    flowersTotal: Number(row.flowers_total || 0),
+    totalAmount: Number(row.total_amount || 0),
+    status: row.status || "new",
+    seenByOwner: Boolean(row.seen_by_owner),
+  };
 }
 
 function playOrderAlertSound() {
   try {
-    const AudioCtx =
-      window.AudioContext || window.webkitAudioContext;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const notes = [659.25, 880, 1046.5];
@@ -242,7 +242,7 @@ function triggerBrowserOrderNotification(orderObj) {
       Notification.permission === "granted"
     ) {
       new Notification("🌸 Նոր պատվեր — Areg flowers", {
-        body: `${orderObj.customerName} • ${orderObj.totalAmount} դրամ • ${orderObj.address}`,
+        body: `${orderObj.customerName} (${orderObj.accountEmail}) • ${orderObj.totalAmount} դրամ`,
         icon: logo,
       });
     }
@@ -1198,7 +1198,8 @@ function FlowerShop() {
   const [authReady, setAuthReady] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const [orders, setOrders] = useState(() => readStoredOrders());
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [adminOrdersOpen, setAdminOrdersOpen] = useState(false);
   const [orderAlertBanner, setOrderAlertBanner] = useState(null);
 
@@ -1256,34 +1257,37 @@ function FlowerShop() {
     setTimeout(() => setSuccess(false), duration);
   };
 
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === ORDERS_STORAGE_KEY) {
-        setOrders(readStoredOrders());
-      }
-    };
-    const handleCustomOrdersEvent = (e) => {
-      if (Array.isArray(e.detail)) {
-        setOrders(e.detail);
-      } else {
-        setOrders(readStoredOrders());
-      }
-    };
+  const fetchOwnerOrdersFromSupabase = async () => {
+    setOrdersLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener("areg-orders-updated", handleCustomOrdersEvent);
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("areg-orders-updated", handleCustomOrdersEvent);
-    };
-  }, []);
+      if (error) {
+        console.log("LOAD ORDERS ERROR:", error);
+        return;
+      }
+
+      const mapped = Array.isArray(data) ? data.map(mapDbRowToOrder) : [];
+      setOrders(mapped);
+    } catch (err) {
+      console.log("FETCH ORDERS EXCEPTION:", err);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOwnerLoggedIn) {
+      setOrders([]);
       setAdminOrdersOpen(false);
       setOrderAlertBanner(null);
       return;
     }
+
+    fetchOwnerOrdersFromSupabase();
 
     if (
       typeof window !== "undefined" &&
@@ -1292,13 +1296,61 @@ function FlowerShop() {
     ) {
       Notification.requestPermission().catch(() => {});
     }
+
+    const channel = supabase
+      .channel("public-orders-owner-feed")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "orders" },
+        (payload) => {
+          const incoming = mapDbRowToOrder(payload.new);
+          setOrders((prev) => {
+            if (prev.some((item) => item.id === incoming.id)) return prev;
+            return [incoming, ...prev];
+          });
+          if (!incoming.seenByOwner) {
+            playOrderAlertSound();
+            triggerBrowserOrderNotification(incoming);
+            setOrderAlertBanner(incoming);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "orders" },
+        (payload) => {
+          const updatedItem = mapDbRowToOrder(payload.new);
+          setOrders((prev) =>
+            prev.map((item) => (item.id === updatedItem.id ? updatedItem : item))
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "orders" },
+        (payload) => {
+          const deletedId = payload.old?.id;
+          if (!deletedId) return;
+          setOrders((prev) => prev.filter((item) => item.id !== deletedId));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [isOwnerLoggedIn]);
 
-  const markAllOrdersAsSeen = () => {
+  const markAllOrdersAsSeen = async () => {
     if (!isOwnerLoggedIn) return;
-    const updated = orders.map((ord) => ({ ...ord, seenByOwner: true }));
-    setOrders(updated);
-    writeStoredOrders(updated);
+    const unseenIds = orders.filter((o) => !o.seenByOwner).map((o) => o.id);
+    setOrders((prev) => prev.map((ord) => ({ ...ord, seenByOwner: true })));
+    if (unseenIds.length > 0) {
+      await supabase
+        .from("orders")
+        .update({ seen_by_owner: true })
+        .in("id", unseenIds);
+    }
   };
 
   const openAdminOrdersModal = () => {
@@ -1306,30 +1358,46 @@ function FlowerShop() {
     setProfileOpen(false);
     setAdminOrdersOpen(true);
     setOrderAlertBanner(null);
+    fetchOwnerOrdersFromSupabase();
     markAllOrdersAsSeen();
   };
 
-  const toggleOrderCompletedStatus = (orderId) => {
+  const toggleOrderCompletedStatus = async (orderId) => {
     if (!isOwnerLoggedIn) return;
-    const updated = orders.map((ord) =>
-      ord.id === orderId
-        ? {
-            ...ord,
-            status: ord.status === "completed" ? "new" : "completed",
-            seenByOwner: true,
-          }
-        : ord
+    const target = orders.find((o) => o.id === orderId);
+    if (!target) return;
+    const nextStatus = target.status === "completed" ? "new" : "completed";
+
+    setOrders((prev) =>
+      prev.map((ord) =>
+        ord.id === orderId
+          ? { ...ord, status: nextStatus, seenByOwner: true }
+          : ord
+      )
     );
-    setOrders(updated);
-    writeStoredOrders(updated);
+
+    const { error } = await supabase
+      .from("orders")
+      .update({ status: nextStatus, seen_by_owner: true })
+      .eq("id", orderId);
+
+    if (error) {
+      showToast("Չհաջողվեց թարմացնել կարգավիճակը", 2500);
+      fetchOwnerOrdersFromSupabase();
+    }
   };
 
-  const deleteOrderRecord = (orderId) => {
+  const deleteOrderRecord = async (orderId) => {
     if (!isOwnerLoggedIn) return;
-    const updated = orders.filter((ord) => ord.id !== orderId);
-    setOrders(updated);
-    writeStoredOrders(updated);
-    showToast("Պատվերը ջնջվեց ցանկից 🗑️", 2000);
+    setOrders((prev) => prev.filter((ord) => ord.id !== orderId));
+
+    const { error } = await supabase.from("orders").delete().eq("id", orderId);
+    if (error) {
+      showToast("Չհաջողվեց ջնջել պատվերը", 2500);
+      fetchOwnerOrdersFromSupabase();
+      return;
+    }
+    showToast("Պատվերը ջնջվեց 🗑️", 2000);
   };
 
   const requireRegisteredUser = (actionMessage) => {
@@ -1896,42 +1964,54 @@ ${productsText}
         }
       }
 
-      const newSavedOrder = {
-        id: `ord_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        createdAt: new Date().toLocaleString("hy-AM"),
-        customerName: form.name.trim(),
+      const dbPayload = {
+        customer_name: form.name.trim(),
         phone: fullOrderPhone,
         address: form.address.trim(),
-        mapUrl,
-        deliverySummary,
-        deliveryFee: currentDelivery.fee,
-        wantsCard: Boolean(form.wantsCard),
-        cardText: form.wantsCard ? form.cardText.trim() : "",
-        paymentMethod:
+        map_url: mapUrl,
+        delivery_summary: deliverySummary,
+        delivery_fee: Number(currentDelivery.fee || 0),
+        wants_card: Boolean(form.wantsCard),
+        card_text: form.wantsCard ? form.cardText.trim() : "",
+        payment_method:
           form.payment === "cash"
             ? "Վճարում առաքման պահին"
             : "Քարտով վճարում",
-        accountEmail: user.email || user.phone || user.id,
+        account_email: user.email || user.phone || user.id,
         items: itemsToOrder.map((item) => ({
           id: item.id,
           title: item.title,
           price: item.price,
           quantity: item.quantity,
         })),
-        flowersTotal: orderFlowersTotal,
-        totalAmount: finalTotal,
+        flowers_total: Number(orderFlowersTotal || 0),
+        total_amount: Number(finalTotal || 0),
         status: "new",
-        seenByOwner: false,
+        seen_by_owner: false,
       };
 
-      const updatedOrders = [newSavedOrder, ...readStoredOrders()];
-      setOrders(updatedOrders);
-      writeStoredOrders(updatedOrders);
+      const { data: insertedRow, error: dbError } = await supabase
+        .from("orders")
+        .insert([dbPayload])
+        .select("*")
+        .single();
 
-      if (isAdminOwnerUser(user)) {
+      if (dbError) {
+        console.log("SUPABASE ORDER INSERT ERROR:", dbError);
+        showToast(
+          "Պատվերը ուղարկվեց, բայց բազայում պահպանելիս սխալ եղավ։ Ստուգեք orders աղյուսակը։",
+          4500
+        );
+      } else if (insertedRow && isAdminOwnerUser(user)) {
+        const mappedNew = mapDbRowToOrder(insertedRow);
+        setOrders((prev) =>
+          prev.some((item) => item.id === mappedNew.id)
+            ? prev
+            : [mappedNew, ...prev]
+        );
         playOrderAlertSound();
-        triggerBrowserOrderNotification(newSavedOrder);
-        setOrderAlertBanner(newSavedOrder);
+        triggerBrowserOrderNotification(mappedNew);
+        setOrderAlertBanner(mappedNew);
       }
 
       const orderedIds = new Set(itemsToOrder.map((i) => i.id));
@@ -2142,6 +2222,9 @@ ${productsText}
             <div>
               <strong>Հաճախորդ՝</strong> {orderAlertBanner.customerName} (
               {orderAlertBanner.phone})
+            </div>
+            <div>
+              <strong>Հաշիվ՝</strong> {orderAlertBanner.accountEmail}
             </div>
             <div>
               <strong>Գումար՝</strong> {orderAlertBanner.totalAmount} դրամ
@@ -3063,13 +3146,17 @@ ${productsText}
             <CloseButton onClick={() => setAdminOrdersOpen(false)}>×</CloseButton>
 
             <ModalTitle style={{ marginBottom: "4px", textAlign: "center" }}>
-              📦 Կայքի պատվերներ ({orders.length})
+              📦 Կայքի բոլոր պատվերները ({orders.length})
             </ModalTitle>
             <ModalText style={{ fontSize: "12.5px", marginBottom: "16px", textAlign: "center" }}>
-              Հասանելի է միայն {ADMIN_OWNER_EMAIL} հաշվին
+              Հասանելի է միայն {ADMIN_OWNER_EMAIL} հաշվին • Բոլոր օգտատերերի պատվերները
             </ModalText>
 
-            {orders.length === 0 ? (
+            {ordersLoading ? (
+              <ModalText style={{ textAlign: "center" }}>
+                Բեռնվում է...
+              </ModalText>
+            ) : orders.length === 0 ? (
               <ModalText style={{ textAlign: "center" }}>
                 Դեռ պատվերներ չկան
               </ModalText>
@@ -3131,6 +3218,9 @@ ${productsText}
                       <div style={{ fontSize: "13px", color: "#2d3748", lineHeight: 1.6 }}>
                         <div>
                           <strong>Հաճախորդ՝</strong> {ord.customerName}
+                        </div>
+                        <div>
+                          <strong>Հաշիվ (Gmail)՝</strong> {ord.accountEmail}
                         </div>
                         <div>
                           <strong>Հեռախոս՝</strong> {ord.phone}
