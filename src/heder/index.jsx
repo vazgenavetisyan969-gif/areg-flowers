@@ -472,6 +472,9 @@ function FlowerShop() {
   const [authReady, setAuthReady] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [cart, setCart] = useState(() => readCartFromStorage(null));
+  const [selectedCartIds, setSelectedCartIds] = useState(() =>
+    readCartFromStorage(null).map((item) => item.id)
+  );
 
   const [success, setSuccess] = useState(false);
   const [successText, setSuccessText] = useState("Ավելացվեց զամբյուղ ✅");
@@ -531,8 +534,10 @@ function FlowerShop() {
     if (currentUser && nextItems.length === 0 && guestItems.length > 0) {
       writeCartToStorage(currentUser.id, guestItems);
       setCart(guestItems);
+      setSelectedCartIds(guestItems.map((i) => i.id));
     } else {
       setCart(nextItems);
+      setSelectedCartIds(nextItems.map((i) => i.id));
     }
 
     setUser(currentUser);
@@ -584,6 +589,9 @@ function FlowerShop() {
   useEffect(() => {
     if (!authReady) return;
     writeCartToStorage(user?.id, cart);
+    setSelectedCartIds((prev) =>
+      prev.filter((id) => cart.some((item) => item.id === id))
+    );
   }, [cart, user?.id, authReady]);
 
   const handleGoogleLogin = async () => {
@@ -813,7 +821,9 @@ function FlowerShop() {
     await supabase.auth.signOut();
     setProfileOpen(false);
     setUser(null);
-    setCart(readCartFromStorage(null));
+    const guestCart = readCartFromStorage(null);
+    setCart(guestCart);
+    setSelectedCartIds(guestCart.map((i) => i.id));
     showToast("Դուրս եկաք հաշվից");
   };
 
@@ -831,6 +841,10 @@ function FlowerShop() {
       writeCartToStorage(user?.id, nextCart);
       return nextCart;
     });
+
+    setSelectedCartIds((prev) =>
+      prev.includes(item.id) ? prev : [...prev, item.id]
+    );
 
     showToast("Ավելացվեց զամբյուղ ✅", 1500);
   };
@@ -854,14 +868,55 @@ function FlowerShop() {
       writeCartToStorage(user?.id, nextCart);
       return nextCart;
     });
+    setSelectedCartIds((prev) => prev.filter((itemId) => itemId !== id));
   };
+
+  const toggleSelectCartItem = (id) => {
+    setSelectedCartIds((prev) =>
+      prev.includes(id) ? prev.filter((itemId) => itemId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllCart = () => {
+    if (selectedCartIds.length === cart.length) {
+      setSelectedCartIds([]);
+    } else {
+      setSelectedCartIds(cart.map((item) => item.id));
+    }
+  };
+
+  const deleteSelectedFromCart = () => {
+    if (selectedCartIds.length === 0) {
+      showToast("Նախ նշեք ապրանքները", 2000);
+      return;
+    }
+    const removedCount = selectedCartIds.length;
+    setCart((prev) => {
+      const nextCart = prev.filter(
+        (item) => !selectedCartIds.includes(item.id)
+      );
+      writeCartToStorage(user?.id, nextCart);
+      return nextCart;
+    });
+    setSelectedCartIds([]);
+    showToast(`Ջնջվեց ${removedCount} նշված ապրանք 🗑️`, 2200);
+  };
+
+  const selectedItems = cart.filter((item) =>
+    selectedCartIds.includes(item.id)
+  );
 
   const cartProductsCount = cart.reduce(
     (count, item) => count + item.quantity,
     0
   );
 
-  const totalPrice = cart.reduce(
+  const selectedQuantityCount = selectedItems.reduce(
+    (count, item) => count + item.quantity,
+    0
+  );
+
+  const totalPrice = selectedItems.reduce(
     (total, item) => total + getPriceNumber(item.price) * item.quantity,
     0
   );
@@ -869,9 +924,14 @@ function FlowerShop() {
   const finalizeOrder = async (cardDetails = null) => {
     setLoading(true);
 
+    const itemsToOrder = selectedItems.length > 0 ? selectedItems : cart;
+    const orderTotal = itemsToOrder.reduce(
+      (sum, item) => sum + getPriceNumber(item.price) * item.quantity,
+      0
+    );
     const fullOrderPhone = getFullPhone(form.countryCode, form.phoneDigits);
 
-    const productsText = cart
+    const productsText = itemsToOrder
       .map((item, index) => {
         const itemTotal = getPriceNumber(item.price) * item.quantity;
         return `
@@ -893,7 +953,7 @@ ${index + 1}. ${item.title}
           cardDetails.holderName
         }, Քարտ՝ •••• •••• •••• ${cardDetails.cardNumber
           .replace(/\D/g, "")
-          .slice(-4)}, Ժամկետ՝ ${cardDetails.expiry}, Գումար՝ ${totalPrice} դրամ`
+          .slice(-4)}, Ժամկետ՝ ${cardDetails.expiry}, Գումար՝ ${orderTotal} դրամ`
       : "";
 
     const orderMessage = `
@@ -909,10 +969,10 @@ ${userAccountInfo}
 ${form.payment === "cash" ? "Վճարում առաքման պահին" : "Քարտով վճարում"}
 ${maskedCard}
 
-Պատվերներ
+Պատվերներ (${itemsToOrder.length} տեսակ)
 ${productsText}
 
-Ընդհանուր գումար: ${totalPrice} դրամ
+Ընդհանուր գումար: ${orderTotal} դրամ
 `;
 
     const formData = {
@@ -929,7 +989,7 @@ ${productsText}
           : "Քարտով վճարում",
       card_info: maskedCard,
       products: productsText,
-      totalPrice: `${totalPrice} դրամ`,
+      totalPrice: `${orderTotal} դրամ`,
       message: orderMessage,
       botcheck: "",
     };
@@ -951,11 +1011,16 @@ ${productsText}
         return;
       }
 
+      const orderedIds = new Set(itemsToOrder.map((i) => i.id));
+      const remainingCart = cart.filter((item) => !orderedIds.has(item.id));
+
       setOrderOpen(false);
       setCardPaymentOpen(false);
       setCartOpen(false);
-      setCart([]);
-      writeCartToStorage(user?.id, []);
+      setCart(remainingCart);
+      setSelectedCartIds(remainingCart.map((i) => i.id));
+      writeCartToStorage(user?.id, remainingCart);
+
       setCardForm({
         holderName: "",
         cardNumber: "",
@@ -989,8 +1054,8 @@ ${productsText}
   const handleOrderSubmit = async (e) => {
     e.preventDefault();
 
-    if (cart.length === 0) {
-      showToast("Զամբյուղը դատարկ է", 2500);
+    if (selectedItems.length === 0) {
+      showToast("Նշեք առնվազն 1 ապրանք զամբյուղում", 2500);
       return;
     }
 
@@ -2275,9 +2340,9 @@ ${productsText}
         <ModalOverlay>
           <CartBox
             style={{
-              width: isMobile ? "95%" : "480px",
+              width: isMobile ? "95%" : "520px",
               borderRadius: "28px",
-              padding: isMobile ? "20px 14px" : "26px",
+              padding: isMobile ? "18px 14px" : "26px",
               maxHeight: "88vh",
               overflowY: "auto",
             }}
@@ -2293,55 +2358,178 @@ ${productsText}
               <ModalText>Զամբյուղը դատարկ է</ModalText>
             ) : (
               <>
-                <CartItems>
-                  {cart.map((item) => (
-                    <CartItem key={item.id}>
-                      <div>
-                        <strong>{item.title}</strong>
-                        <p>
-                          {item.price} × {item.quantity}
-                        </p>
-                      </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: "8px",
+                    padding: "10px 12px",
+                    marginBottom: "12px",
+                    borderRadius: "16px",
+                    background: "#fff5f7",
+                    border: "1px solid #fed7e2",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      cursor: "pointer",
+                      fontSize: isMobile ? "13px" : "14px",
+                      fontWeight: 700,
+                      color: "#97266d",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={
+                        cart.length > 0 &&
+                        selectedCartIds.length === cart.length
+                      }
+                      onChange={toggleSelectAllCart}
+                      style={{
+                        width: "18px",
+                        height: "18px",
+                        accentColor: "#d53f8c",
+                        cursor: "pointer",
+                      }}
+                    />
+                    <span>
+                      Նշել բոլորը ({selectedCartIds.length}/{cart.length})
+                    </span>
+                  </label>
 
-                      <CartActions>
-                        <RoundActionButton
-                          type="button"
-                          onClick={() => minusFromCart(item.id)}
+                  {selectedCartIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={deleteSelectedFromCart}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "999px",
+                        border: "1px solid #feb2b2",
+                        background: "#fff5f5",
+                        color: "#c53030",
+                        fontSize: "12.5px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Ջնջել նշվածները ({selectedCartIds.length})
+                    </button>
+                  )}
+                </div>
+
+                <CartItems>
+                  {cart.map((item) => {
+                    const isChecked = selectedCartIds.includes(item.id);
+                    return (
+                      <CartItem
+                        key={item.id}
+                        style={{
+                          borderRadius: "16px",
+                          padding: isMobile ? "10px" : "12px",
+                          border: isChecked
+                            ? "1.5px solid #f687b3"
+                            : "1px solid #edf2f7",
+                          background: isChecked ? "#fff9fb" : "#ffffff",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            flex: 1,
+                            minWidth: 0,
+                          }}
                         >
-                          -
-                        </RoundActionButton>
-                        <RoundActionButton
-                          type="button"
-                          onClick={() => addToCart(item)}
-                        >
-                          +
-                        </RoundActionButton>
-                        <DeleteActionButton
-                          type="button"
-                          onClick={() => deleteFromCart(item.id)}
-                        >
-                          ×
-                        </DeleteActionButton>
-                      </CartActions>
-                    </CartItem>
-                  ))}
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleSelectCartItem(item.id)}
+                            style={{
+                              width: "19px",
+                              height: "19px",
+                              accentColor: "#d53f8c",
+                              cursor: "pointer",
+                              flexShrink: 0,
+                            }}
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <strong
+                              style={{
+                                display: "block",
+                                fontSize: isMobile ? "14px" : "15px",
+                              }}
+                            >
+                              {item.title}
+                            </strong>
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: isMobile ? "12.5px" : "13.5px",
+                              }}
+                            >
+                              {item.price} × {item.quantity}
+                            </p>
+                          </div>
+                        </div>
+
+                        <CartActions>
+                          <RoundActionButton
+                            type="button"
+                            onClick={() => minusFromCart(item.id)}
+                          >
+                            -
+                          </RoundActionButton>
+                          <RoundActionButton
+                            type="button"
+                            onClick={() => addToCart(item)}
+                          >
+                            +
+                          </RoundActionButton>
+                          <DeleteActionButton
+                            type="button"
+                            onClick={() => deleteFromCart(item.id)}
+                          >
+                            ×
+                          </DeleteActionButton>
+                        </CartActions>
+                      </CartItem>
+                    );
+                  })}
                 </CartItems>
 
-                <ModalText>
-                  <strong>Ընդհանուր գումար՝ {totalPrice} դրամ</strong>
+                <ModalText style={{ marginTop: "12px" }}>
+                  <strong>
+                    Նշվածների ընդհանուր գումար ({selectedQuantityCount} հատ)՝{" "}
+                    {totalPrice} դրամ
+                  </strong>
                 </ModalText>
 
                 <ModalButtons>
                   <Button
                     type="button"
                     $small
-                    style={{ borderRadius: "999px" }}
+                    disabled={selectedCartIds.length === 0}
+                    style={{
+                      borderRadius: "999px",
+                      opacity: selectedCartIds.length === 0 ? 0.5 : 1,
+                    }}
                     onClick={() => {
+                      if (selectedCartIds.length === 0) {
+                        showToast("Նախ նշեք ապրանքները", 2000);
+                        return;
+                      }
                       setCartOpen(false);
                       setOrderOpen(true);
                     }}
                   >
-                    Պատվիրել
+                    Պատվիրել նշվածները ({selectedCartIds.length})
                   </Button>
                   <Button
                     type="button"
@@ -2414,7 +2602,9 @@ ${productsText}
               </ModalSelect>
 
               <ModalText>
-                <strong>Ընդհանուր՝ {totalPrice} դրամ</strong>
+                <strong>
+                  Ընտրված ապրանքներ ({selectedItems.length})՝ {totalPrice} դրամ
+                </strong>
               </ModalText>
 
               <ModalButtons>
@@ -2450,10 +2640,11 @@ ${productsText}
             style={{
               width: isMobile ? "94%" : "450px",
               borderRadius: "32px",
-              padding: isMobile ? "22px 16px" : "28px",
+              padding: isMobile ? "20px 14px" : "28px",
               maxHeight: "92vh",
               overflowY: "auto",
               background: "linear-gradient(180deg, #fff9fb 0%, #ffffff 100%)",
+              boxSizing: "border-box",
             }}
           >
             <CloseButton onClick={() => setCardPaymentOpen(false)}>×</CloseButton>
@@ -2465,7 +2656,6 @@ ${productsText}
               Փոխանցման գումար՝ <strong>{totalPrice} դրամ</strong>
             </ModalText>
 
-            {/* Ձվաձև / շատ կլորավուն սիրուն քարտի դիզայն */}
             <div
               style={{
                 background:
@@ -2473,9 +2663,9 @@ ${productsText}
                 color: "#fff",
                 borderRadius: isMobile ? "999px" : "120px",
                 width: "100%",
-                minHeight: isMobile ? "136px" : "164px",
-                padding: isMobile ? "20px 26px" : "24px 36px",
-                marginBottom: "20px",
+                minHeight: isMobile ? "132px" : "164px",
+                padding: isMobile ? "18px 22px" : "24px 36px",
+                marginBottom: "18px",
                 boxShadow: "0 16px 32px rgba(151, 38, 109, 0.28)",
                 border: "2px solid rgba(255, 255, 255, 0.55)",
                 display: "flex",
@@ -2483,6 +2673,7 @@ ${productsText}
                 justifyContent: "center",
                 alignItems: "center",
                 textAlign: "center",
+                boxSizing: "border-box",
               }}
             >
               <div
@@ -2498,7 +2689,7 @@ ${productsText}
               </div>
               <div
                 style={{
-                  fontSize: isMobile ? "15.5px" : "18.5px",
+                  fontSize: isMobile ? "15px" : "18.5px",
                   letterSpacing: "2px",
                   fontWeight: 800,
                   marginBottom: "8px",
@@ -2509,7 +2700,7 @@ ${productsText}
               <div
                 style={{
                   display: "flex",
-                  gap: "16px",
+                  gap: "12px",
                   justifyContent: "center",
                   fontSize: "12px",
                   fontWeight: 600,
@@ -2521,7 +2712,10 @@ ${productsText}
               </div>
             </div>
 
-            <ModalForm onSubmit={handleCardPaymentSubmit}>
+            <ModalForm
+              onSubmit={handleCardPaymentSubmit}
+              style={{ width: "100%", boxSizing: "border-box" }}
+            >
               <ModalInput
                 type="text"
                 placeholder="Քարտապանի անուն ազգանունը"
@@ -2530,7 +2724,12 @@ ${productsText}
                   setCardForm({ ...cardForm, holderName: e.target.value })
                 }
                 required
-                style={{ borderRadius: "999px", padding: "11px 16px" }}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  borderRadius: "999px",
+                  padding: "11px 16px",
+                }}
               />
 
               <ModalInput
@@ -2546,21 +2745,28 @@ ${productsText}
                   })
                 }
                 required
-                style={{ borderRadius: "999px", padding: "11px 16px" }}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  borderRadius: "999px",
+                  padding: "11px 16px",
+                }}
               />
 
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
+                  gridTemplateColumns: "1.2fr 0.8fr",
                   gap: "10px",
+                  width: "100%",
+                  boxSizing: "border-box",
                 }}
               >
                 <ModalInput
                   type="text"
                   inputMode="numeric"
                   maxLength={5}
-                  placeholder="Ժամկետը (MM/YY)"
+                  placeholder="MM/YY"
                   value={cardForm.expiry}
                   onChange={(e) =>
                     setCardForm({
@@ -2569,14 +2775,21 @@ ${productsText}
                     })
                   }
                   required
-                  style={{ borderRadius: "999px", padding: "11px 16px" }}
+                  style={{
+                    width: "100%",
+                    minWidth: 0,
+                    boxSizing: "border-box",
+                    borderRadius: "999px",
+                    padding: "11px 14px",
+                    textAlign: "center",
+                  }}
                 />
 
                 <ModalInput
                   type="password"
                   inputMode="numeric"
                   maxLength={3}
-                  placeholder="CVV (3 թիվ)"
+                  placeholder="CVV"
                   value={cardForm.cvv}
                   onChange={(e) =>
                     setCardForm({
@@ -2585,7 +2798,15 @@ ${productsText}
                     })
                   }
                   required
-                  style={{ borderRadius: "999px", padding: "11px 16px" }}
+                  style={{
+                    width: "100%",
+                    minWidth: 0,
+                    boxSizing: "border-box",
+                    borderRadius: "999px",
+                    padding: "11px 12px",
+                    textAlign: "center",
+                    letterSpacing: "2px",
+                  }}
                 />
               </div>
 
