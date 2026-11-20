@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { supabase } from "../supabaseClient";
 import {
   Page,
@@ -52,6 +54,11 @@ import {
 const WEB3FORMS_ACCESS_KEY = "6e450ea3-482b-42bc-aefa-76e2cd4f3364";
 const REAL_PAYMENT_GATEWAY_URL = import.meta.env.VITE_CARD_PAYMENT_URL || "";
 const logo = "/areg-flowers-logo.png";
+
+// Էջմիածնի կենտրոնի կոորդինատները և անվճար գոտու շառավիղը (4 կմ)
+const EJMIATSIN_CENTER = { lat: 40.1656, lng: 44.2919 };
+const EJMIATSIN_FREE_RADIUS_KM = 4;
+const PRICE_PER_KM_AMD = 300;
 
 const COUNTRIES = [
   { code: "AM", name: "Հայաստան", flag: "🇦🇲", dial: "+374", minDigits: 8, maxDigits: 8, placeholder: "77123456" },
@@ -167,6 +174,276 @@ const categoryItems = {
     })),
   },
 };
+
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function getDeliveryCalculation(coords) {
+  if (!coords) {
+    return {
+      selected: false,
+      isEjmiatsin: true,
+      distanceFromCenterKm: 0,
+      extraKm: 0,
+      fee: 0,
+    };
+  }
+  const dist = calculateDistanceKm(
+    EJMIATSIN_CENTER.lat,
+    EJMIATSIN_CENTER.lng,
+    coords.lat,
+    coords.lng
+  );
+  if (dist <= EJMIATSIN_FREE_RADIUS_KM) {
+    return {
+      selected: true,
+      isEjmiatsin: true,
+      distanceFromCenterKm: Number(dist.toFixed(1)),
+      extraKm: 0,
+      fee: 0,
+    };
+  }
+  const extraKm = Number((dist - EJMIATSIN_FREE_RADIUS_KM).toFixed(1));
+  const fee = Math.round(extraKm * PRICE_PER_KM_AMD);
+  return {
+    selected: true,
+    isEjmiatsin: false,
+    distanceFromCenterKm: Number(dist.toFixed(1)),
+    extraKm,
+    fee,
+  };
+}
+
+function DeliveryLocationMap({
+  selectedCoords,
+  onSelectCoords,
+  onAddressAutoFill,
+  isMobile,
+}) {
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markerRef = useRef(null);
+  const [locating, setLocating] = useState(false);
+
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=hy`
+      );
+      const data = await res.json();
+      if (data?.display_name && onAddressAutoFill) {
+        const shortAddr = data.display_name
+          .split(",")
+          .slice(0, 3)
+          .join(",")
+          .trim();
+        onAddressAutoFill(shortAddr);
+      }
+    } catch {
+      // ignore geocode network failure
+    }
+  };
+
+  useEffect(() => {
+    if (!mapContainerRef.current || mapInstanceRef.current) return;
+
+    const initialLat = selectedCoords?.lat || EJMIATSIN_CENTER.lat;
+    const initialLng = selectedCoords?.lng || EJMIATSIN_CENTER.lng;
+
+    const map = L.map(mapContainerRef.current, {
+      center: [initialLat, initialLng],
+      zoom: 13,
+    });
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap",
+    }).addTo(map);
+
+    // Էջմիածնի անվճար առաքման շրջանը
+    L.circle([EJMIATSIN_CENTER.lat, EJMIATSIN_CENTER.lng], {
+      color: "#d53f8c",
+      fillColor: "#fbb6ce",
+      fillOpacity: 0.22,
+      radius: EJMIATSIN_FREE_RADIUS_KM * 1000,
+    }).addTo(map);
+
+    const pinIcon = L.divIcon({
+      className: "custom-flower-pin",
+      html: `<div style="font-size:28px;line-height:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.35));">📍</div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 28],
+    });
+
+    if (selectedCoords) {
+      markerRef.current = L.marker(
+        [selectedCoords.lat, selectedCoords.lng],
+        { icon: pinIcon }
+      ).addTo(map);
+    }
+
+    map.on("click", (e) => {
+      const { lat, lng } = e.latlng;
+      if (markerRef.current) {
+        markerRef.current.setLatLng([lat, lng]);
+      } else {
+        markerRef.current = L.marker([lat, lng], { icon: pinIcon }).addTo(map);
+      }
+      onSelectCoords({ lat, lng });
+      reverseGeocode(lat, lng);
+    });
+
+    mapInstanceRef.current = map;
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+      markerRef.current = null;
+    };
+  }, []);
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) return;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        onSelectCoords({ lat, lng });
+        reverseGeocode(lat, lng);
+
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.setView([lat, lng], 15);
+          const pinIcon = L.divIcon({
+            className: "custom-flower-pin",
+            html: `<div style="font-size:28px;line-height:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.35));">📍</div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 28],
+          });
+          if (markerRef.current) {
+            markerRef.current.setLatLng([lat, lng]);
+          } else {
+            markerRef.current = L.marker([lat, lng], { icon: pinIcon }).addTo(
+              mapInstanceRef.current
+            );
+          }
+        }
+        setLocating(false);
+      },
+      () => {
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  const deliveryInfo = getDeliveryCalculation(selectedCoords);
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        borderRadius: "20px",
+        border: "1.5px solid #fbb6ce",
+        background: "#fff9fb",
+        padding: "10px",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "8px",
+          marginBottom: "8px",
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          style={{
+            fontSize: isMobile ? "12px" : "13px",
+            fontWeight: 700,
+            color: "#97266d",
+          }}
+        >
+          🗺️ Նշեք ձեր տան տեղը քարտեզի վրա
+        </span>
+
+        <button
+          type="button"
+          onClick={handleUseMyLocation}
+          disabled={locating}
+          style={{
+            padding: "5px 10px",
+            borderRadius: "999px",
+            border: "1px solid #f687b3",
+            background: "#fff",
+            color: "#b83280",
+            fontSize: "11.5px",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          {locating ? "Որոնվում է..." : "📍 Իմ տեղը"}
+        </button>
+      </div>
+
+      <div
+        ref={mapContainerRef}
+        style={{
+          width: "100%",
+          height: isMobile ? "185px" : "215px",
+          borderRadius: "14px",
+          overflow: "hidden",
+          zIndex: 1,
+        }}
+      />
+
+      <div
+        style={{
+          marginTop: "8px",
+          fontSize: isMobile ? "12px" : "12.5px",
+          color: "#2d3748",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "4px",
+        }}
+      >
+        {!deliveryInfo.selected ? (
+          <span style={{ color: "#b83280", fontWeight: 600 }}>
+            Սեղմեք քարտեզի վրա՝ առաքման գումարը հաշվելու համար
+          </span>
+        ) : deliveryInfo.isEjmiatsin ? (
+          <span style={{ color: "#2f855a", fontWeight: 700 }}>
+            ✅ Էջմիածնի ներսում առաքումը ԱՆՎՃԱՐ է (0 դրամ)
+          </span>
+        ) : (
+          <span style={{ color: "#97266d", fontWeight: 700 }}>
+            🚚 Էջմիածնից դուրս ({deliveryInfo.extraKm} կմ × 300 դրամ) ={" "}
+            {deliveryInfo.fee} դրամ
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() =>
@@ -476,6 +753,8 @@ function FlowerShop() {
     readCartFromStorage(null).map((item) => item.id)
   );
 
+  const [deliveryCoords, setDeliveryCoords] = useState(null);
+
   const [success, setSuccess] = useState(false);
   const [successText, setSuccessText] = useState("Ավելացվեց զամբյուղ ✅");
   const [loading, setLoading] = useState(false);
@@ -514,6 +793,19 @@ function FlowerShop() {
     setSuccessText(msg);
     setSuccess(true);
     setTimeout(() => setSuccess(false), duration);
+  };
+
+  const requireRegisteredUser = (actionMessage) => {
+    if (user) return true;
+    setCartOpen(false);
+    setOrderOpen(false);
+    setCardPaymentOpen(false);
+    setAuthError(
+      actionMessage || "Պատվիրելու համար նախ մուտք գործեք կամ գրանցվեք։"
+    );
+    setAuthOpen(true);
+    showToast("Նախ մուտք գործեք կամ գրանցվեք 🔐", 3000);
+    return false;
   };
 
   const getFullPhone = (countryCode, digits) => {
@@ -916,20 +1208,37 @@ function FlowerShop() {
     0
   );
 
-  const totalPrice = selectedItems.reduce(
+  const flowersTotal = selectedItems.reduce(
     (total, item) => total + getPriceNumber(item.price) * item.quantity,
     0
   );
 
+  const deliveryCalc = getDeliveryCalculation(deliveryCoords);
+  const grandTotal = flowersTotal + deliveryCalc.fee;
+
   const finalizeOrder = async (cardDetails = null) => {
+    if (!requireRegisteredUser("Պատվեր ձևակերպելու համար անհրաժեշտ է գրանցվել։")) {
+      return;
+    }
+
     setLoading(true);
 
     const itemsToOrder = selectedItems.length > 0 ? selectedItems : cart;
-    const orderTotal = itemsToOrder.reduce(
+    const orderFlowersTotal = itemsToOrder.reduce(
       (sum, item) => sum + getPriceNumber(item.price) * item.quantity,
       0
     );
+    const currentDelivery = getDeliveryCalculation(deliveryCoords);
+    const finalTotal = orderFlowersTotal + currentDelivery.fee;
     const fullOrderPhone = getFullPhone(form.countryCode, form.phoneDigits);
+
+    const mapUrl = deliveryCoords
+      ? `https://www.google.com/maps?q=${deliveryCoords.lat},${deliveryCoords.lng}`
+      : "Քարտեզի վրա նշված չէ";
+
+    const deliverySummary = currentDelivery.isEjmiatsin
+      ? "Էջմիածնի ներսում — Անվճար (0 դրամ)"
+      : `Էջմիածնից դուրս (${currentDelivery.extraKm} կմ × 300 դրամ) — ${currentDelivery.fee} դրամ`;
 
     const productsText = itemsToOrder
       .map((item, index) => {
@@ -944,16 +1253,16 @@ ${index + 1}. ${item.title}
       })
       .join("\n");
 
-    const userAccountInfo = user
-      ? `Հաշիվ: ${user.email || user.phone || user.id}`
-      : "Հաշիվ: Հյուր (առանց մուտքի)";
+    const userAccountInfo = `Գրանցված հաշիվ: ${
+      user.email || user.phone || user.id
+    }`;
 
     const maskedCard = cardDetails
       ? `Քարտային վճարում փոխանցված՝ Քարտապան՝ ${
           cardDetails.holderName
         }, Քարտ՝ •••• •••• •••• ${cardDetails.cardNumber
           .replace(/\D/g, "")
-          .slice(-4)}, Ժամկետ՝ ${cardDetails.expiry}, Գումար՝ ${orderTotal} դրամ`
+          .slice(-4)}, Ժամկետ՝ ${cardDetails.expiry}, Գումար՝ ${finalTotal} դրամ`
       : "";
 
     const orderMessage = `
@@ -963,6 +1272,8 @@ ${index + 1}. ${item.title}
 Անուն: ${form.name}
 Հեռախոս: ${fullOrderPhone}
 Հասցե: ${form.address}
+Քարտեզի կետ: ${mapUrl}
+Առաքման հաշվարկ: ${deliverySummary}
 ${userAccountInfo}
 
 Վճարում
@@ -972,7 +1283,9 @@ ${maskedCard}
 Պատվերներ (${itemsToOrder.length} տեսակ)
 ${productsText}
 
-Ընդհանուր գումար: ${orderTotal} դրամ
+Ծաղիկների գումար: ${orderFlowersTotal} դրամ
+Առաքման գումար: ${currentDelivery.fee} դրամ
+Ընդհանուր վճարման գումար: ${finalTotal} դրամ
 `;
 
     const formData = {
@@ -982,6 +1295,8 @@ ${productsText}
       name: form.name,
       phone: fullOrderPhone,
       address: form.address,
+      map_location: mapUrl,
+      delivery_fee: `${currentDelivery.fee} դրամ`,
       account: userAccountInfo,
       payment:
         form.payment === "cash"
@@ -989,7 +1304,7 @@ ${productsText}
           : "Քարտով վճարում",
       card_info: maskedCard,
       products: productsText,
-      totalPrice: `${orderTotal} դրամ`,
+      totalPrice: `${finalTotal} դրամ`,
       message: orderMessage,
       botcheck: "",
     };
@@ -1020,6 +1335,7 @@ ${productsText}
       setCart(remainingCart);
       setSelectedCartIds(remainingCart.map((i) => i.id));
       writeCartToStorage(user?.id, remainingCart);
+      setDeliveryCoords(null);
 
       setCardForm({
         holderName: "",
@@ -1054,8 +1370,17 @@ ${productsText}
   const handleOrderSubmit = async (e) => {
     e.preventDefault();
 
+    if (!requireRegisteredUser("Պատվեր ձևակերպելու համար անհրաժեշտ է գրանցվել։")) {
+      return;
+    }
+
     if (selectedItems.length === 0) {
       showToast("Նշեք առնվազն 1 ապրանք զամբյուղում", 2500);
+      return;
+    }
+
+    if (!deliveryCoords) {
+      showToast("Նշեք ձեր տան տեղը քարտեզի վրա 🗺️", 3000);
       return;
     }
 
@@ -1664,7 +1989,7 @@ ${productsText}
                   marginBottom: "12px",
                 }}
               >
-                🌸 Ուղիղ ջերմոցից • Թարմ ու բուրավետ
+                🌸 Ուղիղ ջերմոցից • Էջմիածնում առաքումն անվճար է
               </div>
 
               <Title
@@ -1935,9 +2260,10 @@ ${productsText}
                   border: "1px solid #fed7e2",
                 }}
               >
-                <CardTitle>Արագ առաքում</CardTitle>
+                <CardTitle>Անվճար առաքում Էջմիածնում</CardTitle>
                 <CardText>
-                  Առաքում Երևանում և մարզերում՝ հարմար պայմաններով։
+                  Էջմիածնի ներսում առաքումն անվճար է, իսկ Էջմիածնից դուրս՝ 300
+                  դրամ/կմ։
                 </CardText>
               </Card>
             </AboutCards>
@@ -1962,7 +2288,7 @@ ${productsText}
       <Footer
         id="contact"
         style={{
-          padding: isMobile ? "26px 16px 88px" : "36px 28px",
+          padding: isMobile ? "26px 16px 110px" : "36px 28px",
           textAlign: "center",
         }}
       >
@@ -1974,12 +2300,13 @@ ${productsText}
         <p>Հեռ․ +374 77 88 44 67</p>
       </Footer>
 
+      {/* Զամբյուղի կոճակը մի փոքր վերև բարձրացված */}
       <CartButton
         onClick={() => setCartOpen(true)}
         style={{
           position: "fixed",
           right: isMobile ? "16px" : "24px",
-          bottom: isMobile ? "16px" : "24px",
+          bottom: isMobile ? "72px" : "84px",
           width: isMobile ? "56px" : "60px",
           height: isMobile ? "56px" : "60px",
           borderRadius: "50%",
@@ -2097,6 +2424,9 @@ ${productsText}
             </CloseButton>
 
             <ModalTitle>Մուտք կամ գրանցում</ModalTitle>
+            <ModalText style={{ fontSize: "13px", marginBottom: "12px" }}>
+              Պատվեր ձևակերպելու համար անհրաժեշտ է մուտք գործել կամ գրանցվել
+            </ModalText>
 
             <button
               type="button"
@@ -2358,6 +2688,25 @@ ${productsText}
               <ModalText>Զամբյուղը դատարկ է</ModalText>
             ) : (
               <>
+                {!user && (
+                  <div
+                    style={{
+                      padding: "10px 12px",
+                      marginBottom: "12px",
+                      borderRadius: "14px",
+                      background: "#fff5f7",
+                      border: "1px solid #fbb6ce",
+                      fontSize: "12.5px",
+                      color: "#97266d",
+                      fontWeight: 600,
+                      textAlign: "center",
+                    }}
+                  >
+                    🔒 Պատվիրելու համար անհրաժեշտ է նախ մուտք գործել կամ
+                    գրանցվել
+                  </div>
+                )}
+
                 <div
                   style={{
                     display: "flex",
@@ -2506,8 +2855,8 @@ ${productsText}
 
                 <ModalText style={{ marginTop: "12px" }}>
                   <strong>
-                    Նշվածների ընդհանուր գումար ({selectedQuantityCount} հատ)՝{" "}
-                    {totalPrice} դրամ
+                    Նշվածների գումար ({selectedQuantityCount} հատ)՝{" "}
+                    {flowersTotal} դրամ
                   </strong>
                 </ModalText>
 
@@ -2521,6 +2870,13 @@ ${productsText}
                       opacity: selectedCartIds.length === 0 ? 0.5 : 1,
                     }}
                     onClick={() => {
+                      if (
+                        !requireRegisteredUser(
+                          "Պատվիրելու համար նախ մուտք գործեք կամ գրանցվեք։"
+                        )
+                      ) {
+                        return;
+                      }
                       if (selectedCartIds.length === 0) {
                         showToast("Նախ նշեք ապրանքները", 2000);
                         return;
@@ -2529,7 +2885,9 @@ ${productsText}
                       setOrderOpen(true);
                     }}
                   >
-                    Պատվիրել նշվածները ({selectedCartIds.length})
+                    {user
+                      ? `Պատվիրել նշվածները (${selectedCartIds.length})`
+                      : "Մուտք գործել և պատվիրել"}
                   </Button>
                   <Button
                     type="button"
@@ -2550,15 +2908,15 @@ ${productsText}
         <ModalOverlay>
           <ModalBox
             style={{
-              width: isMobile ? "94%" : "440px",
+              width: isMobile ? "95%" : "490px",
               borderRadius: "28px",
-              padding: isMobile ? "22px 16px" : "28px",
-              maxHeight: "90vh",
+              padding: isMobile ? "20px 14px" : "26px",
+              maxHeight: "92vh",
               overflowY: "auto",
             }}
           >
             <CloseButton onClick={() => setOrderOpen(false)}>×</CloseButton>
-            <ModalTitle>Ձևակերպել պատվերը</ModalTitle>
+            <ModalTitle>Ձևակերպել պատվերը և ընտրել տեղը</ModalTitle>
 
             <ModalForm onSubmit={handleOrderSubmit}>
               <ModalInput
@@ -2583,9 +2941,20 @@ ${productsText}
                 required
               />
 
+              <DeliveryLocationMap
+                selectedCoords={deliveryCoords}
+                onSelectCoords={(coords) => setDeliveryCoords(coords)}
+                onAddressAutoFill={(autoAddr) =>
+                  setForm((prev) =>
+                    prev.address.trim() ? prev : { ...prev, address: autoAddr }
+                  )
+                }
+                isMobile={isMobile}
+              />
+
               <ModalInput
                 type="text"
-                placeholder="Առաքման հասցեն"
+                placeholder="Առաքման հասցեն (քաղաք/գյուղ, փողոց, տուն)"
                 value={form.address}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
                 required
@@ -2601,11 +2970,60 @@ ${productsText}
                 <option value="card">Քարտով վճարում</option>
               </ModalSelect>
 
-              <ModalText>
-                <strong>
-                  Ընտրված ապրանքներ ({selectedItems.length})՝ {totalPrice} դրամ
-                </strong>
-              </ModalText>
+              <div
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: "18px",
+                  background: "#fff5f7",
+                  border: "1px solid #fed7e2",
+                  fontSize: isMobile ? "13px" : "14px",
+                  color: "#2d3748",
+                  boxSizing: "border-box",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: "4px",
+                  }}
+                >
+                  <span>Ծաղիկների գումար ({selectedItems.length})՝</span>
+                  <strong>{flowersTotal} դրամ</strong>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: "6px",
+                  }}
+                >
+                  <span>Առաքում՝</span>
+                  <strong
+                    style={{
+                      color: deliveryCalc.fee === 0 ? "#2f855a" : "#97266d",
+                    }}
+                  >
+                    {deliveryCalc.fee === 0
+                      ? "Անվճար (0 դրամ)"
+                      : `${deliveryCalc.fee} դրամ`}
+                  </strong>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    borderTop: "1px solid #fbb6ce",
+                    paddingTop: "6px",
+                    fontSize: isMobile ? "14.5px" : "15.5px",
+                    color: "#97266d",
+                  }}
+                >
+                  <strong>Ընդհանուր վճարման գումար՝</strong>
+                  <strong>{grandTotal} դրամ</strong>
+                </div>
+              </div>
 
               <ModalButtons>
                 <Button
@@ -2617,8 +3035,8 @@ ${productsText}
                   {loading
                     ? "Փոխանցվում է..."
                     : form.payment === "card"
-                    ? "Անցնել քարտով վճարման"
-                    : "Հաստատել պատվերը"}
+                    ? `Անցնել վճարման (${grandTotal} դրամ)`
+                    : `Հաստատել (${grandTotal} դրամ)`}
                 </Button>
                 <Button
                   type="button"
@@ -2653,7 +3071,8 @@ ${productsText}
               💳 Քարտով վճարում և փոխանցում
             </ModalTitle>
             <ModalText style={{ marginBottom: "16px" }}>
-              Փոխանցման գումար՝ <strong>{totalPrice} դրամ</strong>
+              Ծաղիկներ ({flowersTotal} դրամ) + Առաքում ({deliveryCalc.fee} դրամ)
+              = <strong>{grandTotal} դրամ</strong>
             </ModalText>
 
             <div
@@ -2819,7 +3238,7 @@ ${productsText}
                 >
                   {loading
                     ? "Փոխանցվում է..."
-                    : `Փոխանցել ${totalPrice} դրամ`}
+                    : `Փոխանցել ${grandTotal} դրամ`}
                 </Button>
                 <Button
                   type="button"
